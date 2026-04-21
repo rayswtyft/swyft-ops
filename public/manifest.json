@@ -1,0 +1,9 @@
+{
+  "name": "Swyft Operations",
+  "short_name": "Swyft Ops",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eef2f6",
+  "theme_color": "#111827",
+  "icons": []
+}

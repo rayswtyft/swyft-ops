@@ -1,0 +1,2198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Swyft Operations</title>
+
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#111827" />
+
+  <style>
+    :root {
+      --bg: #eef2f6;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --brand: #111827;
+      --good: #047857;
+      --warn: #d97706;
+      --danger: #dc2626;
+      --blue: #1d4ed8;
+      --shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .container {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    h1 { margin: 8px 0 18px; font-size: 30px; }
+    h2 { margin: 0 0 12px; font-size: 22px; }
+    h3 { margin: 0 0 10px; font-size: 18px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .hidden { display: none !important; }
+    .muted { color: var(--muted); font-size: 14px; }
+    .row { display: grid; gap: 10px; grid-template-columns: 1fr 1fr; }
+    .row-3 { display: grid; gap: 10px; grid-template-columns: 1fr 1fr 1fr; }
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: 1fr 1fr; }
+    .quick-actions { display: grid; gap: 12px; grid-template-columns: 1fr 1fr; }
+    .section-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    input, select, textarea, button {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid #d1d5db;
+      font-size: 15px;
+      margin-top: 8px;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    button {
+      cursor: pointer;
+      background: var(--brand);
+      color: white;
+      border: none;
+      font-weight: 600;
+    }
+    button.secondary { background: #e5e7eb; color: #111827; }
+    button.green { background: var(--good); }
+    button.orange { background: var(--warn); }
+    button.red { background: var(--danger); }
+    button.blue { background: var(--blue); }
+
+    .modebar {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .mode-btn {
+      padding: 16px;
+      font-size: 17px;
+      font-weight: bold;
+      border-radius: 16px;
+      border: none;
+      cursor: pointer;
+      background: #dbeafe;
+      color: #1d4ed8;
+      box-shadow: var(--shadow);
+    }
+    .mode-btn.active {
+      background: #1d4ed8;
+      color: white;
+    }
+
+    .dashboard-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(4, 1fr);
+      margin-bottom: 16px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .stat .label { color: var(--muted); font-size: 13px; }
+    .stat .value { font-size: 24px; font-weight: bold; margin-top: 6px; }
+
+    .job-layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 16px;
+      align-items: start;
+    }
+    .job-list {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 12px;
+      max-height: 78vh;
+      overflow: auto;
+      position: sticky;
+      top: 16px;
+      box-shadow: var(--shadow);
+    }
+    .job-list-item {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 10px;
+      cursor: pointer;
+      background: #fff;
+      transition: 0.15s ease;
+    }
+    .job-list-item.active {
+      border: 2px solid var(--blue);
+      background: #eff6ff;
+    }
+    .job-list-item.dragging {
+      opacity: 0.45;
+    }
+
+    .service-card {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      margin-top: 10px;
+      background: #fafafa;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 7px 11px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #3730a3;
+      font-size: 12px;
+      margin-right: 6px;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+    .status-pill {
+      display: inline-block;
+      padding: 7px 11px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+      text-transform: capitalize;
+      margin-top: 8px;
+    }
+    .status-scheduled { background: #f3f4f6; color: #374151; }
+    .status-on_the_way { background: #dbeafe; color: #1d4ed8; }
+    .status-active, .status-in_progress { background: #dcfce7; color: #166534; }
+    .status-finished { background: #ede9fe; color: #6d28d9; }
+
+    .photos {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .photo-box { width: 145px; }
+    .photo-box img {
+      width: 100%;
+      height: 105px;
+      object-fit: cover;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .address-chip {
+      display: inline-block;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: #f3f4f6;
+      margin: 4px 6px 0 0;
+      font-size: 13px;
+    }
+    .history-row, .estimate-row {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      background: #fff;
+      margin-top: 10px;
+    }
+    .schedule-strip {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .schedule-strip .dot {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: #eef2ff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #3730a3;
+    }
+    .drag-hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    .checklist-shell {
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      border: 1px solid #dbe7f3;
+      border-radius: 20px;
+      padding: 14px;
+      margin-top: 10px;
+    }
+    .checklist-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .checklist-count {
+      font-size: 13px;
+      color: var(--muted);
+      background: white;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+    }
+    .checklist-list { display: grid; gap: 10px; }
+    .checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 1px solid #e7eef5;
+      border-radius: 16px;
+      background: white;
+    }
+    .checklist-item.checked {
+      background: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+    .checklist-item input[type="checkbox"] {
+      width: 24px;
+      height: 24px;
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    .checklist-label {
+      font-size: 15px;
+      line-height: 1.3;
+      flex: 1;
+      font-weight: 600;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.82);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 20px;
+    }
+    .modal.hidden { display: none; }
+    .modal-content {
+      background: white;
+      max-width: 950px;
+      width: 100%;
+      border-radius: 20px;
+      padding: 20px;
+      max-height: 90vh;
+      overflow: auto;
+      box-shadow: var(--shadow);
+      color: var(--text);
+    }
+    .photo-modal-content {
+      max-width: 95vw;
+      max-height: 95vh;
+      background: transparent;
+      padding: 0;
+    }
+    .photo-modal-content img {
+      max-width: 100%;
+      max-height: 85vh;
+      border-radius: 12px;
+    }
+
+    @media (max-width: 1024px) {
+      .dashboard-grid { grid-template-columns: repeat(2, 1fr); }
+      .job-layout { grid-template-columns: 1fr; }
+      .job-list { position: static; max-height: none; }
+    }
+    @media (max-width: 768px) {
+      .grid-2, .row, .row-3, .dashboard-grid, .quick-actions {
+        grid-template-columns: 1fr;
+      }
+      .modebar { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Swyft Operations</h1>
+
+    <div id="accessGate" class="card">
+      <h2>Choose Access</h2>
+      <div class="muted">Select Van or Manager.</div>
+
+      <div id="firstAccessScreen" class="grid grid-2" style="margin-top:12px;">
+        <button class="blue" style="min-height:90px;font-size:24px;font-weight:bold;" onclick="enterVanDirect()">Van</button>
+        <button class="secondary" style="min-height:90px;font-size:24px;font-weight:bold;" onclick="showManagerCodeScreen()">Manager</button>
+      </div>
+
+      <div id="managerCodeScreen" class="hidden" style="margin-top:12px;">
+        <input id="managerPinInput" type="password" placeholder="Enter manager code" />
+        <div class="row">
+          <button class="green" onclick="submitManagerCode()">Continue</button>
+          <button class="secondary" onclick="showFirstAccessScreen()">Back</button>
+        </div>
+      </div>
+
+      <div id="appChoiceScreen" class="hidden" style="margin-top:12px;">
+        <div class="muted">Choose which app to open.</div>
+        <div class="grid grid-2" style="margin-top:12px;">
+          <button class="blue" style="min-height:80px;font-size:20px;font-weight:bold;" onclick="openChosenApp('manager')">Manager App</button>
+          <button class="secondary" style="min-height:80px;font-size:20px;font-weight:bold;" onclick="openChosenApp('scheduling')">Scheduling</button>
+          <button class="orange" style="min-height:80px;font-size:20px;font-weight:bold;" onclick="openChosenApp('van')">Van App</button>
+        </div>
+        <button class="secondary" onclick="showManagerCodeScreen()">Back</button>
+      </div>
+    </div>
+
+    <div id="appShell" class="hidden">
+      <div class="card" style="margin-bottom:16px; padding:12px 16px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <button id="backToChooserBtn" class="secondary hidden" style="width:auto; min-width:120px; margin-top:0;" onclick="goBackToAppChooser()">← Back</button>
+            <span id="loggedInAsText" class="muted"></span>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <span id="syncStatus" class="muted">Sync ready</span>
+            <button class="secondary" style="width:auto; min-width:120px; margin-top:0;" onclick="manualRefresh()">Refresh</button>
+            <button class="red" style="width:auto; min-width:120px; margin-top:0;" onclick="signOut()">Sign Out</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modebar">
+        <button id="mode-van" class="mode-btn active" onclick="setMode('van')">Van App</button>
+        <button id="mode-scheduling" class="mode-btn" onclick="setMode('scheduling')">Scheduling</button>
+        <button id="mode-manager" class="mode-btn" onclick="setMode('manager')">Manager's App</button>
+      </div>
+
+      <div id="dashboardSection">
+        <div class="dashboard-grid">
+          <div class="stat"><div class="label">Today's Jobs</div><div class="value" id="statTotalJobs">0</div></div>
+          <div class="stat"><div class="label">Travel</div><div class="value" id="statTravel">0</div></div>
+          <div class="stat"><div class="label">Finished</div><div class="value" id="statFinished">0</div></div>
+          <div class="stat"><div class="label">Scheduled</div><div class="value" id="statScheduled">0</div></div>
+          <div class="stat"><div class="label">On The Way</div><div class="value" id="statOnTheWay">0</div></div>
+          <div class="stat"><div class="label">In Progress</div><div class="value" id="statInProgress">0</div></div>
+          <div class="stat"><div class="label">Lunch</div><div class="value" id="statLunch">0</div></div>
+          <div class="stat"><div class="label">Materials</div><div class="value" id="statMaterials">$0</div></div>
+        </div>
+      </div>
+
+      <div id="vanTopSection" class="grid grid-2" style="margin-bottom:16px;">
+        <div class="card">
+          <h2>Van App Setup</h2>
+          <div class="muted">Field-use only.</div>
+          <input id="dailyDate" type="date" />
+          <div class="row" style="margin-top:10px;">
+            <button class="orange" onclick="startDailyLunch()">Lunch Start</button>
+            <button class="orange" onclick="endDailyLunch()">Lunch End</button>
+          </div>
+          <div id="dailyLunchMeta" class="muted" style="margin-top:10px;"></div>
+        </div>
+
+        <div class="card">
+          <h2>Daily Van Checklist</h2>
+          <div id="dailyChecklistMeta" class="muted">No jobs loaded yet.</div>
+          <div id="dailyChecklist"></div>
+        </div>
+      </div>
+
+      <div id="managerTopSection" class="grid grid-2 hidden" style="margin-bottom:16px;">
+        <div class="card">
+          <h2>Manager Daily Setup</h2>
+          <div class="muted">Crew size, lunch, inventory, and end-of-day export live here.</div>
+          <input id="managerDailyDateMirror" type="date" disabled />
+          <input id="managerDailyCrewSize" type="number" min="1" placeholder="Crew size for today" />
+          <button class="green" onclick="saveManagerCrewSize()">Save Crew Size</button>
+          <button class="blue" onclick="openFinishDaySummary()">Finish Day</button>
+        </div>
+
+        <div class="card">
+          <h2>Inventory</h2>
+          <div class="muted">Manager only.</div>
+          <input id="inventoryLinkInput" placeholder="Inventory app link" />
+          <button class="secondary" onclick="saveInventoryLink()">Save Link</button>
+          <button class="blue" onclick="openInventory()">Open Inventory</button>
+          <div id="reportingList" class="muted" style="margin-top:12px;">Loading…</div>
+        </div>
+      </div>
+
+      <div id="schedulingSection" class="hidden">
+        <div class="card" style="margin-bottom:16px;">
+          <div class="section-title-row">
+            <div>
+              <h2>Clean Schedule Board</h2>
+              <div class="muted">Plan by day only. No times. Drag to set job order.</div>
+            </div>
+          </div>
+
+          <div class="row">
+            <input id="scheduleDate" type="date" />
+            <input id="scheduleCrewSize" type="number" min="1" placeholder="Crew size for scheduled jobs" />
+          </div>
+
+          <div class="quick-actions" style="margin-top:12px;">
+            <button class="blue" onclick="openJobModal()">+ Create Job</button>
+            <button class="secondary" onclick="openEstimateCreateModal()">+ Create Estimate</button>
+          </div>
+
+          <div class="quick-actions" style="margin-top:12px;">
+            <button class="secondary" onclick="openContractorEditorModal()">Contractor Editor</button>
+            <button class="secondary" onclick="openEstimatesViewerModal()">View Estimates</button>
+          </div>
+
+          <div class="quick-actions" style="margin-top:12px;">
+            <button class="secondary" onclick="openHistoryModal()">Archive / History</button>
+            <button class="green" onclick="saveSchedulingCrewSize()">Save Scheduling Crew Size</button>
+          </div>
+
+          <div class="schedule-strip" id="scheduleOrderStrip"></div>
+        </div>
+      </div>
+
+      <div class="job-layout">
+        <div class="job-list">
+          <h2>Jobs</h2>
+          <div id="jobList"></div>
+        </div>
+        <div class="detail-panel">
+          <div id="jobDetail" class="card">
+            <h2>Job Detail</h2>
+            <div class="muted">Select a job from the left.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="photoModal" class="modal hidden" onclick="closePhotoModal()">
+    <div class="photo-modal-content">
+      <img id="photoModalImg" src="" alt="Preview" />
+      <div id="photoModalCaption" style="color:white; margin-top:12px; text-align:center;"></div>
+    </div>
+  </div>
+
+  <div id="jobModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Create Job</h2>
+        <button class="secondary" onclick="closeJobModal()">Close</button>
+      </div>
+
+      <label>Select Contractor</label>
+      <input id="contractorSearch" placeholder="Search by contractor or company" oninput="filterContractors()" />
+      <select id="contractorSelect"></select>
+
+      <div style="margin-top:10px;">
+        <button class="secondary" onclick="toggleAddContractor()">+ Add New Contractor</button>
+      </div>
+
+      <div id="addContractorPanel" class="hidden" style="margin-top:12px;">
+        <h3>New Contractor</h3>
+        <input id="companyName" placeholder="Company name" />
+        <input id="contactName" placeholder="Contact person" />
+        <input id="email" placeholder="Email" />
+        <input id="phone" placeholder="Phone" />
+        <input id="billingAddress" placeholder="Billing address" />
+        <input id="paymentTerms" placeholder="Payment terms" />
+        <textarea id="newServiceAddresses" placeholder="Service addresses, one per line"></textarea>
+        <div class="row">
+          <button onclick="addContractor()">Save Contractor</button>
+          <button class="secondary" onclick="toggleAddContractor()">Cancel</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <input id="serviceAddress" placeholder="Service address" />
+        <select id="savedServiceAddressSelect" onchange="applySavedServiceAddress()">
+          <option value="">Use saved service address (optional)</option>
+        </select>
+      </div>
+
+      <input id="serviceDate" type="date" />
+      <textarea id="jobNotes" placeholder="Notes (optional)"></textarea>
+
+      <div id="services"></div>
+
+      <div class="row" style="margin-top:12px;">
+        <button class="secondary" onclick="addService()">Add Service</button>
+        <button class="green" onclick="createJob()">Create Job</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="estimateCreateModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Create Estimate</h2>
+        <button class="secondary" onclick="closeEstimateCreateModal()">Close</button>
+      </div>
+
+      <select id="estimateContractor"></select>
+      <input id="estimateAddress" placeholder="Estimate address" />
+      <textarea id="estimateNotes" placeholder="Estimate notes"></textarea>
+      <div id="estimateServices"></div>
+
+      <div class="row" style="margin-top:12px;">
+        <button class="secondary" onclick="addEstimateService()">Add Estimate Service</button>
+        <button class="green" onclick="createEstimate()">Create Estimate</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="contractorEditorModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Contractor Editor</h2>
+        <button class="secondary" onclick="closeContractorEditorModal()">Close</button>
+      </div>
+      <select id="contractorEditorSelect"></select>
+      <div id="contractorEditorPanel" class="muted" style="margin-top:12px;">Select a contractor above.</div>
+    </div>
+  </div>
+
+  <div id="estimatesViewerModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Estimates</h2>
+        <button class="secondary" onclick="closeEstimatesViewerModal()">Close</button>
+      </div>
+      <div id="estimatesList"></div>
+    </div>
+  </div>
+
+  <div id="historyModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Archive / History</h2>
+        <button class="secondary" onclick="closeHistoryModal()">Close</button>
+      </div>
+      <div id="historyList"></div>
+    </div>
+  </div>
+
+  <div id="finishDayModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Finish Day Summary</h2>
+        <button class="secondary" onclick="closeFinishDaySummary()">Close</button>
+      </div>
+      <div id="finishDaySummaryBody"></div>
+      <div class="row" style="margin-top:16px;">
+        <button class="secondary" onclick="closeFinishDaySummary()">Cancel</button>
+        <button class="blue" onclick="confirmFinishDay()">Finish Day + Download PDFs</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="materialsModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="row" style="align-items:center;">
+        <h2 style="margin:0;">Materials Used</h2>
+        <button class="secondary" onclick="closeMaterialsModal()">Close</button>
+      </div>
+      <div id="materialsModalBody"></div>
+      <div class="row" style="margin-top:16px;">
+        <button class="secondary" onclick="skipMaterialsAndStop()">Skip Materials</button>
+        <button class="green" onclick="saveMaterialsAndStop()">Save and Finish Job</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const MANAGER_PIN = "12124512";
+    const AUTO_REFRESH_MS = 4000;
+
+    let serviceOptions = {};
+    let materialDefs = [];
+    let services = [];
+    let estimateServices = [];
+    let dailySetup = { date: "", crewSize: 1, lunchMinutes: 0, activeLunchStart: null };
+    let allContractors = [];
+    let currentJobs = [];
+    let estimates = [];
+    let historyJobs = [];
+    let selectedJobId = null;
+    let editingJobId = null;
+    let currentMode = "van";
+    let accessRole = null;
+    let finishDaySummaryCache = null;
+    let draggingJobId = null;
+    let currentMaterialsContext = null;
+    let inventoryLink = "";
+    let refreshTimer = null;
+    let isRefreshing = false;
+
+    const junkOptions = [
+      { label: "Quarter load", price: 175 },
+      { label: "Half load", price: 325 },
+      { label: "3/4 load", price: 475 },
+      { label: "Full load", price: 550 }
+    ];
+
+    function setSyncStatus(text) {
+      const el = document.getElementById("syncStatus");
+      if (el) el.innerText = text;
+    }
+
+    function statusClass(status) {
+      return `status-${status}`;
+    }
+
+    function formatCurrency(value) {
+      return `$${Number(value || 0).toFixed(2)}`;
+    }
+
+    function showFirstAccessScreen() {
+      document.getElementById("firstAccessScreen").classList.remove("hidden");
+      document.getElementById("managerCodeScreen").classList.add("hidden");
+      document.getElementById("appChoiceScreen").classList.add("hidden");
+    }
+
+    function showManagerCodeScreen() {
+      document.getElementById("firstAccessScreen").classList.add("hidden");
+      document.getElementById("managerCodeScreen").classList.remove("hidden");
+      document.getElementById("appChoiceScreen").classList.add("hidden");
+    }
+
+    function showAppChoiceScreen() {
+      document.getElementById("firstAccessScreen").classList.add("hidden");
+      document.getElementById("managerCodeScreen").classList.add("hidden");
+      document.getElementById("appChoiceScreen").classList.remove("hidden");
+    }
+
+    function enterVanDirect() {
+      accessRole = "van";
+      localStorage.setItem("swyftAccessRole", "van");
+      localStorage.setItem("swyftSelectedApp", "van");
+      finishLogin("van");
+    }
+
+    function submitManagerCode() {
+      const pin = document.getElementById("managerPinInput").value;
+      if (pin !== MANAGER_PIN) {
+        alert("Wrong code");
+        return;
+      }
+      accessRole = "manager";
+      localStorage.setItem("swyftAccessRole", "manager");
+      document.getElementById("managerPinInput").value = "";
+      showAppChoiceScreen();
+    }
+
+    function openChosenApp(appName) {
+      localStorage.setItem("swyftSelectedApp", appName);
+      finishLogin(appName);
+    }
+
+    function finishLogin(appName) {
+      document.getElementById("accessGate").classList.add("hidden");
+      document.getElementById("appShell").classList.remove("hidden");
+
+      const loggedInAsText = document.getElementById("loggedInAsText");
+      const backBtn = document.getElementById("backToChooserBtn");
+
+      if (accessRole === "van") {
+        loggedInAsText.innerText = "Logged in: Van";
+        backBtn.classList.add("hidden");
+        setMode("van");
+        startAutoRefresh();
+        return;
+      }
+
+      loggedInAsText.innerText = `Logged in: Manager • App: ${appName === "manager" ? "Manager" : appName === "scheduling" ? "Scheduling" : "Van"}`;
+      backBtn.classList.remove("hidden");
+
+      if (appName === "manager") setMode("manager");
+      if (appName === "scheduling") setMode("scheduling");
+      if (appName === "van") setMode("van");
+
+      startAutoRefresh();
+    }
+
+    function goBackToAppChooser() {
+      if (accessRole !== "manager") return;
+      document.getElementById("appShell").classList.add("hidden");
+      document.getElementById("accessGate").classList.remove("hidden");
+      showAppChoiceScreen();
+    }
+
+    function signOut() {
+      stopAutoRefresh();
+      accessRole = null;
+      localStorage.removeItem("swyftAccessRole");
+      localStorage.removeItem("swyftSelectedApp");
+
+      document.getElementById("appShell").classList.add("hidden");
+      document.getElementById("accessGate").classList.remove("hidden");
+      document.getElementById("managerPinInput").value = "";
+      showFirstAccessScreen();
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      refreshTimer = setInterval(async () => {
+        await refreshAll(false);
+      }, AUTO_REFRESH_MS);
+    }
+
+    function stopAutoRefresh() {
+      if (refreshTimer) clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+
+    async function manualRefresh() {
+      await refreshAll(true);
+    }
+
+    function currentDateForMode() {
+      if (currentMode === "scheduling") {
+        return document.getElementById("scheduleDate").value || dailySetup.date;
+      }
+      return document.getElementById("dailyDate").value || dailySetup.date;
+    }
+
+    function setMode(mode) {
+      if (accessRole === "van" && mode !== "van") return;
+
+      currentMode = mode;
+
+      document.getElementById("mode-van").classList.toggle("active", mode === "van");
+      document.getElementById("mode-scheduling").classList.toggle("active", mode === "scheduling");
+      document.getElementById("mode-manager").classList.toggle("active", mode === "manager");
+
+      document.getElementById("mode-scheduling").classList.toggle("hidden", accessRole !== "manager");
+      document.getElementById("mode-manager").classList.toggle("hidden", accessRole !== "manager");
+
+      document.getElementById("dashboardSection").classList.toggle("hidden", mode === "van");
+      document.getElementById("vanTopSection").classList.toggle("hidden", mode !== "van");
+      document.getElementById("managerTopSection").classList.toggle("hidden", mode !== "manager");
+      document.getElementById("schedulingSection").classList.toggle("hidden", mode !== "scheduling");
+
+      renderJobList();
+      renderSelectedJob();
+      if (mode === "scheduling") renderScheduleBoard();
+      refreshAll(false);
+    }
+
+    async function init() {
+      const metaRes = await fetch("/meta");
+      const meta = await metaRes.json();
+      serviceOptions = meta.serviceOptions;
+      materialDefs = meta.materialDefs || [];
+
+      await loadSettings();
+      await loadDailySetup();
+      await loadContractors();
+      await loadJobs();
+      await loadDailyChecklist();
+      await loadDashboard();
+      await loadReporting();
+      await loadEstimates();
+      await loadHistory();
+
+      const savedRole = localStorage.getItem("swyftAccessRole");
+      const savedApp = localStorage.getItem("swyftSelectedApp");
+
+      if (savedRole === "van") {
+        accessRole = "van";
+        finishLogin("van");
+      } else if (savedRole === "manager" && savedApp) {
+        accessRole = "manager";
+        finishLogin(savedApp);
+      } else {
+        showFirstAccessScreen();
+      }
+    }
+
+    async function refreshAll(showStatus = false) {
+      if (isRefreshing) return;
+      if (document.getElementById("appShell").classList.contains("hidden")) return;
+
+      isRefreshing = true;
+      if (showStatus) setSyncStatus("Refreshing...");
+
+      try {
+        const currentSelected = selectedJobId;
+        await loadDailySetup();
+        await loadJobs();
+        await loadDashboard();
+        await loadDailyChecklist();
+
+        if (currentMode === "manager") {
+          await loadReporting();
+          await loadHistory();
+        }
+        if (currentMode === "scheduling") {
+          await loadEstimates();
+          await loadHistory();
+        }
+
+        if (currentSelected && currentJobs.find(j => j.id === currentSelected)) {
+          selectedJobId = currentSelected;
+          renderJobList();
+          renderSelectedJob();
+        }
+
+        const now = new Date();
+        setSyncStatus(`Synced ${now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`);
+      } catch (err) {
+        console.error(err);
+        setSyncStatus("Sync issue");
+      } finally {
+        isRefreshing = false;
+      }
+    }
+
+    async function loadSettings() {
+      const res = await fetch("/settings");
+      const data = await res.json();
+      inventoryLink = data.inventoryLink || "";
+      document.getElementById("inventoryLinkInput").value = inventoryLink;
+    }
+
+    async function saveInventoryLink() {
+      const value = document.getElementById("inventoryLinkInput").value.trim();
+      const res = await fetch("/settings/inventory-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inventoryLink: value })
+      });
+      const data = await res.json();
+      inventoryLink = data.inventoryLink || "";
+      alert("Inventory link saved");
+      await refreshAll(true);
+    }
+
+    function openInventory() {
+      if (!inventoryLink) {
+        alert("Save an inventory link first.");
+        return;
+      }
+      window.open(inventoryLink, "_blank");
+    }
+
+    async function loadDailySetup() {
+      const res = await fetch("/daily-setup");
+      dailySetup = await res.json();
+
+      document.getElementById("dailyDate").value = dailySetup.date;
+      document.getElementById("managerDailyDateMirror").value = dailySetup.date;
+      document.getElementById("managerDailyCrewSize").value = dailySetup.crewSize;
+      document.getElementById("serviceDate").value = dailySetup.date;
+      document.getElementById("scheduleDate").value = dailySetup.date;
+      document.getElementById("scheduleCrewSize").value = dailySetup.crewSize;
+
+      renderDailyLunchMeta();
+    }
+
+    function renderDailyLunchMeta() {
+      document.getElementById("dailyLunchMeta").innerText =
+        `Lunch today: ${Number(dailySetup.lunchMinutes || 0).toFixed(2)} min • Active: ${dailySetup.activeLunchStart ? "Yes" : "No"}`;
+    }
+
+    async function saveManagerCrewSize() {
+      const date = document.getElementById("dailyDate").value || dailySetup.date;
+      const crewSize = Number(document.getElementById("managerDailyCrewSize").value || 1);
+
+      const res = await fetch("/daily-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, crewSize })
+      });
+
+      dailySetup = await res.json();
+      await refreshAll(true);
+      alert("Crew size saved");
+    }
+
+    async function saveSchedulingCrewSize() {
+      const date = document.getElementById("scheduleDate").value || dailySetup.date;
+      const crewSize = Number(document.getElementById("scheduleCrewSize").value || 1);
+
+      const res = await fetch("/daily-setup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, crewSize })
+      });
+
+      dailySetup = await res.json();
+      await refreshAll(true);
+      alert("Scheduling crew size saved");
+    }
+
+    async function startDailyLunch() {
+      const res = await fetch("/daily-lunch-start", { method: "POST" });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      dailySetup = data;
+      renderDailyLunchMeta();
+      await refreshAll(true);
+    }
+
+    async function endDailyLunch() {
+      const res = await fetch("/daily-lunch-end", { method: "POST" });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      dailySetup = data;
+      renderDailyLunchMeta();
+      await refreshAll(true);
+    }
+
+    async function loadDailyChecklist() {
+      const date = document.getElementById("dailyDate").value || dailySetup.date;
+      const res = await fetch(`/daily-checklist?date=${encodeURIComponent(date)}`);
+      const data = await res.json();
+
+      const checkedCount = data.items.filter(x => x.checked).length;
+      document.getElementById("dailyChecklistMeta").innerText =
+        `Date: ${data.date} • ${checkedCount}/${data.items.length} checked`;
+
+      if (!data.items.length) {
+        document.getElementById("dailyChecklist").innerHTML =
+          `<div class="muted" style="margin-top:10px;">No checklist items yet. Create jobs for this date.</div>`;
+        return;
+      }
+
+      document.getElementById("dailyChecklist").innerHTML = `
+        <div class="checklist-shell">
+          <div class="checklist-head">
+            <div class="muted">Check these off at the beginning of the day.</div>
+            <div class="checklist-count">${checkedCount}/${data.items.length} complete</div>
+          </div>
+          <div class="checklist-list">
+            ${data.items.map(entry => `
+              <label class="checklist-item ${entry.checked ? "checked" : ""}">
+                <input type="checkbox" ${entry.checked ? "checked" : ""} onchange="toggleChecklistItem('${data.date}', ${JSON.stringify(entry.item)}, this.checked)" />
+                <span class="checklist-label">${entry.item}</span>
+              </label>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    }
+
+    async function toggleChecklistItem(date, item, checked) {
+      await fetch("/daily-checklist/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, item, checked })
+      });
+      await refreshAll(true);
+    }
+
+    async function loadDashboard() {
+      const date = document.getElementById("dailyDate").value || dailySetup.date;
+      const res = await fetch(`/dashboard?date=${encodeURIComponent(date)}`);
+      const data = await res.json();
+
+      document.getElementById("statTotalJobs").innerText = data.totalJobs;
+      document.getElementById("statTravel").innerText = `${data.totalTravelMinutes} min`;
+      document.getElementById("statFinished").innerText = data.finished;
+      document.getElementById("statScheduled").innerText = data.scheduled;
+      document.getElementById("statOnTheWay").innerText = data.onTheWay;
+      document.getElementById("statInProgress").innerText = data.inProgress;
+      document.getElementById("statLunch").innerText = `${data.lunchMinutes} min`;
+
+      const materialsTotal = currentJobs.reduce((sum, j) => {
+        return sum + j.services.reduce((svcSum, s) => svcSum + Number(s.materialsTotal || 0), 0);
+      }, 0);
+      document.getElementById("statMaterials").innerText = formatCurrency(materialsTotal);
+    }
+
+    async function loadReporting() {
+      const res = await fetch("/reporting");
+      const rows = await res.json();
+      const el = document.getElementById("reportingList");
+
+      if (!rows.length) {
+        el.innerHTML = `<div class="muted">No reporting data yet.</div>`;
+        return;
+      }
+
+      el.innerHTML = rows.map(r => `
+        <div class="service-card">
+          <strong>${r.date}</strong>
+          <div class="muted">Travel: ${r.travelMinutes} min</div>
+        </div>
+      `).join("");
+    }
+
+    async function loadHistory() {
+      const res = await fetch("/history");
+      historyJobs = await res.json();
+
+      const el = document.getElementById("historyList");
+      if (!el) return;
+
+      if (!historyJobs.length) {
+        el.innerHTML = `<div class="muted">No archived or finished jobs yet.</div>`;
+        return;
+      }
+
+      el.innerHTML = historyJobs.map(job => `
+        <div class="history-row">
+          <strong>${job.serviceAddress}</strong>
+          <div class="muted">${job.serviceDate} • ${job.status}</div>
+          <div class="muted">Travel: ${job.totalTravelMinutes} min</div>
+        </div>
+      `).join("");
+    }
+
+    async function loadContractors() {
+      const res = await fetch("/contractors");
+      allContractors = await res.json();
+      renderContractorOptions(allContractors);
+      renderEstimateContractorOptions(allContractors);
+      renderContractorEditorSelect(allContractors);
+      syncSavedServiceAddresses();
+      renderContractorEditor();
+    }
+
+    function contractorLabel(c) {
+      return c.companyName
+        ? `${c.companyName}${c.contactName ? " — " + c.contactName : ""}`
+        : (c.contactName || "Unnamed Contractor");
+    }
+
+    function renderContractorOptions(contractors) {
+      const select = document.getElementById("contractorSelect");
+      if (!contractors.length) {
+        select.innerHTML = `<option value="">No contractors yet</option>`;
+        return;
+      }
+      select.innerHTML = contractors.map(c =>
+        `<option value="${c.id}">${contractorLabel(c)}</option>`
+      ).join("");
+    }
+
+    function renderEstimateContractorOptions(contractors) {
+      const select = document.getElementById("estimateContractor");
+      select.innerHTML = contractors.map(c =>
+        `<option value="${c.id}">${contractorLabel(c)}</option>`
+      ).join("");
+    }
+
+    function renderContractorEditorSelect(contractors) {
+      const select = document.getElementById("contractorEditorSelect");
+      select.innerHTML = `<option value="">Select contractor</option>` + contractors.map(c =>
+        `<option value="${c.id}">${contractorLabel(c)}</option>`
+      ).join("");
+      select.onchange = renderContractorEditor;
+    }
+
+    function renderContractorEditor() {
+      const select = document.getElementById("contractorEditorSelect");
+      const panel = document.getElementById("contractorEditorPanel");
+      const contractor = allContractors.find(c => c.id === Number(select.value));
+
+      if (!contractor) {
+        panel.innerHTML = `<div class="muted">Select a contractor above.</div>`;
+        return;
+      }
+
+      panel.innerHTML = `
+        <input id="editContractorCompany" value="${contractor.companyName || ""}" placeholder="Company name" />
+        <input id="editContractorContact" value="${contractor.contactName || ""}" placeholder="Contact name" />
+        <input id="editContractorEmail" value="${contractor.email || ""}" placeholder="Email" />
+        <input id="editContractorPhone" value="${contractor.phone || ""}" placeholder="Phone" />
+        <input id="editContractorBilling" value="${contractor.billingAddress || ""}" placeholder="Billing address" />
+        <input id="editContractorTerms" value="${contractor.paymentTerms || ""}" placeholder="Payment terms" />
+        <textarea id="editContractorAddresses" placeholder="Service addresses, one per line">${(contractor.serviceAddresses || []).join("\n")}</textarea>
+        <button class="green" onclick="saveContractorEditor(${contractor.id})">Save Contractor</button>
+        <div style="margin-top:10px;">
+          ${(contractor.serviceAddresses || []).map(a => `<span class="address-chip">${a}</span>`).join("")}
+        </div>
+      `;
+    }
+
+    async function saveContractorEditor(id) {
+      const payload = {
+        companyName: document.getElementById("editContractorCompany").value,
+        contactName: document.getElementById("editContractorContact").value,
+        email: document.getElementById("editContractorEmail").value,
+        phone: document.getElementById("editContractorPhone").value,
+        billingAddress: document.getElementById("editContractorBilling").value,
+        paymentTerms: document.getElementById("editContractorTerms").value,
+        serviceAddresses: document.getElementById("editContractorAddresses").value
+          .split("\n").map(x => x.trim()).filter(Boolean)
+      };
+
+      const res = await fetch(`/contractors/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      await loadContractors();
+      await refreshAll(true);
+      alert("Contractor updated");
+    }
+
+    function filterContractors() {
+      const q = document.getElementById("contractorSearch").value.toLowerCase().trim();
+
+      if (!q) {
+        renderContractorOptions(allContractors);
+        return;
+      }
+
+      const filtered = allContractors.filter(c => {
+        const company = (c.companyName || "").toLowerCase();
+        const contact = (c.contactName || "").toLowerCase();
+        const email = (c.email || "").toLowerCase();
+        const phone = (c.phone || "").toLowerCase();
+        return company.includes(q) || contact.includes(q) || email.includes(q) || phone.includes(q);
+      });
+
+      renderContractorOptions(filtered);
+      syncSavedServiceAddresses();
+    }
+
+    function syncSavedServiceAddresses() {
+      const select = document.getElementById("savedServiceAddressSelect");
+      const contractorId = Number(document.getElementById("contractorSelect")?.value || 0);
+      const contractor = allContractors.find(c => c.id === contractorId);
+
+      if (!contractor || !contractor.serviceAddresses?.length) {
+        select.innerHTML = `<option value="">Use saved service address (optional)</option>`;
+        return;
+      }
+
+      select.innerHTML =
+        `<option value="">Use saved service address (optional)</option>` +
+        contractor.serviceAddresses.map(a => `<option value="${a}">${a}</option>`).join("");
+    }
+
+    function applySavedServiceAddress() {
+      const value = document.getElementById("savedServiceAddressSelect").value;
+      if (value) document.getElementById("serviceAddress").value = value;
+    }
+
+    function toggleAddContractor() {
+      document.getElementById("addContractorPanel").classList.toggle("hidden");
+    }
+
+    async function addContractor() {
+      const payload = {
+        companyName: document.getElementById("companyName").value,
+        contactName: document.getElementById("contactName").value,
+        email: document.getElementById("email").value,
+        phone: document.getElementById("phone").value,
+        billingAddress: document.getElementById("billingAddress").value,
+        paymentTerms: document.getElementById("paymentTerms").value,
+        serviceAddresses: document.getElementById("newServiceAddresses").value
+          .split("\n").map(x => x.trim()).filter(Boolean)
+      };
+
+      if (!payload.companyName && !payload.contactName) {
+        alert("Enter at least a company name or contact name");
+        return;
+      }
+
+      const res = await fetch("/contractors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const created = await res.json();
+
+      document.getElementById("companyName").value = "";
+      document.getElementById("contactName").value = "";
+      document.getElementById("email").value = "";
+      document.getElementById("phone").value = "";
+      document.getElementById("billingAddress").value = "";
+      document.getElementById("paymentTerms").value = "";
+      document.getElementById("newServiceAddresses").value = "";
+
+      await loadContractors();
+      document.getElementById("contractorSelect").value = created.id;
+      document.getElementById("estimateContractor").value = created.id;
+      document.getElementById("addContractorPanel").classList.add("hidden");
+      syncSavedServiceAddresses();
+      alert("Contractor saved");
+    }
+
+    function isHourly(service) {
+      return service.category === "Cleaning" ||
+        (service.category === "Construction" && service.subtype === "Demo") ||
+        service.category === "Labor";
+    }
+
+    function isConcrete(service) {
+      return service.category === "Construction" &&
+        (
+          service.subtype === "Concrete cutting" ||
+          service.subtype === "Concrete fill with rebar" ||
+          service.subtype === "Concrete fill without rebar"
+        );
+    }
+
+    function cleaningAutoChargeText(service) {
+      return service.category === "Cleaning" && service.subtype !== "Site cleanup"
+        ? "Cleaning supplies are added automatically."
+        : "";
+    }
+
+    function addService() {
+      const firstCategory = Object.keys(serviceOptions)[0];
+      const firstSubtype = serviceOptions[firstCategory][0];
+
+      services.push({
+        category: firstCategory,
+        subtype: firstSubtype,
+        crewSize: 1,
+        hoursManual: 0,
+        linearFeet: 0,
+        junkLoad: "Quarter load",
+        junkPrice: 175
+      });
+
+      renderServices();
+    }
+
+    function addEstimateService() {
+      const firstCategory = Object.keys(serviceOptions)[0];
+      const firstSubtype = serviceOptions[firstCategory][0];
+
+      estimateServices.push({
+        category: firstCategory,
+        subtype: firstSubtype,
+        crewSize: 1,
+        hoursManual: 0,
+        linearFeet: 0,
+        junkLoad: "Quarter load",
+        junkPrice: 175
+      });
+
+      renderEstimateServices();
+    }
+
+    function updateService(arr, index, key, value, renderFn) {
+      arr[index][key] = value;
+
+      if (key === "category") {
+        arr[index].subtype = serviceOptions[value][0];
+        arr[index].hoursManual = 0;
+        arr[index].linearFeet = 0;
+        arr[index].junkLoad = "Quarter load";
+        arr[index].junkPrice = 175;
+      }
+
+      if (key === "subtype") {
+        arr[index].hoursManual = 0;
+        arr[index].linearFeet = 0;
+        arr[index].junkLoad = "Quarter load";
+        arr[index].junkPrice = 175;
+      }
+
+      if (key === "junkLoad") {
+        const match = junkOptions.find(o => o.label === value);
+        arr[index].junkPrice = match ? match.price : 175;
+      }
+
+      renderFn();
+    }
+
+    function updateJobService(index, key, value) {
+      updateService(services, index, key, value, renderServices);
+    }
+
+    function updateEstimateService(index, key, value) {
+      updateService(estimateServices, index, key, value, renderEstimateServices);
+    }
+
+    function removeService(index) {
+      services.splice(index, 1);
+      renderServices();
+    }
+
+    function removeEstimateService(index) {
+      estimateServices.splice(index, 1);
+      renderEstimateServices();
+    }
+
+    function renderServiceGroup(arr, onChangePrefix, removeFnName) {
+      return arr.map((s, i) => {
+        const subtypeOptions = serviceOptions[s.category]
+          .map(opt => `<option value="${opt}" ${opt === s.subtype ? "selected" : ""}>${opt}</option>`)
+          .join("");
+
+        return `
+          <div class="service-card">
+            <div class="row">
+              <div>
+                <label>Category</label>
+                <select onchange="${onChangePrefix}(${i}, 'category', this.value)">
+                  ${Object.keys(serviceOptions).map(cat =>
+                    `<option value="${cat}" ${cat === s.category ? "selected" : ""}>${cat}</option>`
+                  ).join("")}
+                </select>
+              </div>
+              <div>
+                <label>Service Type</label>
+                <select onchange="${onChangePrefix}(${i}, 'subtype', this.value)">
+                  ${subtypeOptions}
+                </select>
+              </div>
+            </div>
+
+            ${isHourly(s) ? `
+              <div class="row">
+                <div>
+                  <label>Crew Size</label>
+                  <input type="number" min="1" value="${s.crewSize || 1}" onchange="${onChangePrefix}(${i}, 'crewSize', this.value)" />
+                </div>
+                <div>
+                  <label>Hours</label>
+                  <input type="number" step="0.25" min="0" value="${s.hoursManual || 0}" onchange="${onChangePrefix}(${i}, 'hoursManual', this.value)" />
+                </div>
+              </div>
+            ` : ""}
+
+            ${s.category === "Junk" ? `
+              <div>
+                <label>Load Size</label>
+                <select onchange="${onChangePrefix}(${i}, 'junkLoad', this.value)">
+                  ${junkOptions.map(o =>
+                    `<option value="${o.label}" ${o.label === s.junkLoad ? "selected" : ""}>${o.label} - $${o.price}</option>`
+                  ).join("")}
+                </select>
+              </div>
+            ` : ""}
+
+            ${isConcrete(s) ? `
+              <div>
+                <label>Linear Feet</label>
+                <input type="number" min="0" step="1" value="${s.linearFeet || 0}" onchange="${onChangePrefix}(${i}, 'linearFeet', this.value)" />
+              </div>
+            ` : ""}
+
+            <button class="secondary" onclick="${removeFnName}(${i})">Remove Service</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderServices() {
+      const container = document.getElementById("services");
+      if (!services.length) {
+        container.innerHTML = `<div class="muted" style="margin-top:10px;">No services added yet.</div>`;
+        return;
+      }
+      container.innerHTML = renderServiceGroup(services, "updateJobService", "removeService");
+    }
+
+    function renderEstimateServices() {
+      const container = document.getElementById("estimateServices");
+      if (!estimateServices.length) {
+        container.innerHTML = `<div class="muted" style="margin-top:10px;">No estimate services yet.</div>`;
+        return;
+      }
+      container.innerHTML = renderServiceGroup(estimateServices, "updateEstimateService", "removeEstimateService");
+    }
+
+    function openJobModal() {
+      document.getElementById("jobModal").classList.remove("hidden");
+      syncSavedServiceAddresses();
+    }
+
+    function closeJobModal() {
+      document.getElementById("jobModal").classList.add("hidden");
+    }
+
+    function openEstimateCreateModal() {
+      document.getElementById("estimateCreateModal").classList.remove("hidden");
+    }
+
+    function closeEstimateCreateModal() {
+      document.getElementById("estimateCreateModal").classList.add("hidden");
+    }
+
+    function openContractorEditorModal() {
+      document.getElementById("contractorEditorModal").classList.remove("hidden");
+      renderContractorEditor();
+    }
+
+    function closeContractorEditorModal() {
+      document.getElementById("contractorEditorModal").classList.add("hidden");
+    }
+
+    function openEstimatesViewerModal() {
+      document.getElementById("estimatesViewerModal").classList.remove("hidden");
+      loadEstimates();
+    }
+
+    function closeEstimatesViewerModal() {
+      document.getElementById("estimatesViewerModal").classList.add("hidden");
+    }
+
+    function openHistoryModal() {
+      document.getElementById("historyModal").classList.remove("hidden");
+      loadHistory();
+    }
+
+    function closeHistoryModal() {
+      document.getElementById("historyModal").classList.add("hidden");
+    }
+
+    async function createJob() {
+      const contractorId = document.getElementById("contractorSelect").value;
+      const serviceAddress = document.getElementById("serviceAddress").value;
+      const serviceDate = document.getElementById("serviceDate").value;
+      const notes = document.getElementById("jobNotes").value;
+
+      if (!contractorId) return alert("Select a contractor first");
+      if (!serviceAddress) return alert("Enter a service address");
+      if (!serviceDate) return alert("Choose a service date");
+      if (!services.length) return alert("Add at least one service");
+
+      await fetch("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contractorId,
+          serviceAddress,
+          serviceDate,
+          notes,
+          services
+        })
+      });
+
+      document.getElementById("serviceAddress").value = "";
+      document.getElementById("jobNotes").value = "";
+      services = [];
+      renderServices();
+
+      closeJobModal();
+      await refreshAll(true);
+      alert("Job created");
+    }
+
+    async function createEstimate() {
+      const contractorId = document.getElementById("estimateContractor").value;
+      const serviceAddress = document.getElementById("estimateAddress").value;
+      const notes = document.getElementById("estimateNotes").value;
+
+      if (!contractorId) return alert("Select a contractor first");
+      if (!serviceAddress) return alert("Enter an estimate address");
+      if (!estimateServices.length) return alert("Add at least one estimate service");
+
+      await fetch("/estimates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contractorId,
+          serviceAddress,
+          notes,
+          services: estimateServices
+        })
+      });
+
+      document.getElementById("estimateAddress").value = "";
+      document.getElementById("estimateNotes").value = "";
+      estimateServices = [];
+      renderEstimateServices();
+
+      closeEstimateCreateModal();
+      await refreshAll(true);
+      alert("Estimate created");
+    }
+
+    async function loadEstimates() {
+      const res = await fetch("/estimates");
+      estimates = await res.json();
+
+      const container = document.getElementById("estimatesList");
+      if (!estimates.length) {
+        container.innerHTML = `<div class="muted">No estimates yet.</div>`;
+        return;
+      }
+
+      container.innerHTML = estimates.map(est => `
+        <div class="estimate-row">
+          <strong>${est.contractor?.companyName || est.contractor?.contactName || "No Contractor"}</strong>
+          <div class="muted">${est.serviceAddress}</div>
+          <div style="margin-top:8px;">
+            <span class="pill">${formatCurrency(est.totalCost)}</span>
+            <span class="pill">${est.status}</span>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <button class="secondary" onclick="window.open('/estimate/${est.id}/pdf', '_blank')">Estimate PDF</button>
+            ${est.status !== "converted"
+              ? `<button class="blue" onclick="convertEstimate(${est.id})">Convert to Job</button>`
+              : `<button class="secondary" disabled>Converted</button>`}
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function convertEstimate(id) {
+      const serviceDate = document.getElementById("scheduleDate").value || dailySetup.date;
+      const res = await fetch(`/estimates/${id}/convert`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ serviceDate })
+      });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      await refreshAll(true);
+      alert("Estimate converted to job");
+    }
+
+    async function loadJobs() {
+      const date = currentDateForMode();
+      const res = await fetch(`/jobs?date=${encodeURIComponent(date)}`);
+      currentJobs = await res.json();
+
+      if (!selectedJobId && currentJobs.length) {
+        selectedJobId = currentJobs[0].id;
+      }
+      if (selectedJobId && !currentJobs.find(j => j.id === selectedJobId)) {
+        selectedJobId = currentJobs.length ? currentJobs[0].id : null;
+      }
+
+      renderJobList();
+      renderSelectedJob();
+      renderScheduleBoard();
+    }
+
+    function renderJobList() {
+      const list = document.getElementById("jobList");
+
+      if (!currentJobs.length) {
+        list.innerHTML = `<div class="muted">No jobs for this date yet.</div>`;
+        return;
+      }
+
+      list.innerHTML = currentJobs.map(job => `
+        <div
+          class="job-list-item ${selectedJobId === job.id ? "active" : ""}"
+          onclick="selectJob(${job.id})"
+          draggable="${currentMode === 'scheduling'}"
+          ondragstart="onDragStart(event, ${job.id})"
+          ondragover="onDragOver(event)"
+          ondrop="onDrop(event, ${job.id})"
+          ondragend="onDragEnd(event)"
+        >
+          <strong>${job.contractor?.companyName || job.contractor?.contactName || "No Contractor"}</strong>
+          <div class="muted" style="margin-top:4px;">${job.serviceAddress}</div>
+          <div class="status-pill ${statusClass(job.status)}">${job.status.replaceAll("_", " ")}</div>
+          <div style="margin-top:8px;">
+            ${currentMode !== "van" ? `<span class="pill">${formatCurrency(job.totalCost)}</span>` : ""}
+            <span class="pill">${job.totalHours} hrs</span>
+            <span class="pill">${job.totalTravelMinutes} min travel</span>
+          </div>
+          ${currentMode === "scheduling" ? `<div class="drag-hint">Drag to set day order</div>` : ""}
+        </div>
+      `).join("");
+    }
+
+    function selectJob(id) {
+      selectedJobId = id;
+      renderJobList();
+      renderSelectedJob();
+    }
+
+    function openInvoice(id) {
+      window.open(`/invoice/${id}`, "_blank");
+    }
+
+    function toggleEditJob(id) {
+      editingJobId = editingJobId === id ? null : id;
+      renderSelectedJob();
+    }
+
+    async function archiveJob(id) {
+      await fetch(`/jobs/${id}/archive`, { method: "POST" });
+      await refreshAll(true);
+      alert("Job archived");
+    }
+
+    async function deleteJob(id) {
+      const yes = confirm("Delete this job? This is for mistakes only.");
+      if (!yes) return;
+      await fetch(`/jobs/${id}`, { method: "DELETE" });
+      selectedJobId = null;
+      await refreshAll(true);
+      alert("Job deleted");
+    }
+
+    function toLocalInputValue(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      const pad = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function fromLocalInputValue(value) {
+      if (!value) return null;
+      return new Date(value).toISOString();
+    }
+
+    async function saveJobEdit(jobId) {
+      const original = currentJobs.find(j => j.id === jobId);
+      if (!original) return;
+
+      const updatedServices = original.services.map((service, index) => {
+        const category = document.getElementById(`edit-category-${jobId}-${index}`).value;
+        const subtype = document.getElementById(`edit-subtype-${jobId}-${index}`).value;
+        const crewSizeEl = document.getElementById(`edit-crew-${jobId}-${index}`);
+        const hoursEl = document.getElementById(`edit-hours-${jobId}-${index}`);
+        const feetEl = document.getElementById(`edit-feet-${jobId}-${index}`);
+        const junkEl = document.getElementById(`edit-junk-${jobId}-${index}`);
+        const onMyWayEl = document.getElementById(`edit-onmyway-${jobId}-${index}`);
+        const arrivedEl = document.getElementById(`edit-arrived-${jobId}-${index}`);
+        const startEl = document.getElementById(`edit-start-${jobId}-${index}`);
+        const stopEl = document.getElementById(`edit-stop-${jobId}-${index}`);
+
+        const junkMatch = junkOptions.find(j => j.label === (junkEl ? junkEl.value : service.junkLoad));
+
+        return {
+          ...service,
+          category,
+          subtype,
+          crewSize: crewSizeEl ? Number(crewSizeEl.value || 1) : service.crewSize,
+          hoursManual: hoursEl ? Number(hoursEl.value || 0) : service.hoursManual,
+          linearFeet: feetEl ? Number(feetEl.value || 0) : service.linearFeet,
+          junkLoad: junkEl ? junkEl.value : service.junkLoad,
+          junkPrice: junkMatch ? junkMatch.price : service.junkPrice,
+          onMyWayTime: onMyWayEl ? fromLocalInputValue(onMyWayEl.value) : service.onMyWayTime,
+          arrivedTime: arrivedEl ? fromLocalInputValue(arrivedEl.value) : service.arrivedTime,
+          startTime: startEl ? fromLocalInputValue(startEl.value) : service.startTime,
+          endTime: stopEl ? fromLocalInputValue(stopEl.value) : service.endTime,
+          materialsUsed: service.materialsUsed || {}
+        };
+      });
+
+      const payload = {
+        serviceAddress: document.getElementById(`edit-address-${jobId}`).value,
+        serviceDate: document.getElementById(`edit-date-${jobId}`).value,
+        notes: document.getElementById(`edit-notes-${jobId}`).value,
+        services: updatedServices
+      };
+
+      const res = await fetch(`/jobs/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      editingJobId = null;
+      await refreshAll(true);
+      alert("Job updated");
+    }
+
+    function renderSelectedJob() {
+      const panel = document.getElementById("jobDetail");
+      const job = currentJobs.find(j => j.id === selectedJobId);
+
+      if (!job) {
+        panel.innerHTML = `
+          <h2>Job Detail</h2>
+          <div class="muted">Select a job from the left.</div>
+        `;
+        return;
+      }
+
+      const editing = editingJobId === job.id;
+      const showManager = currentMode === "manager";
+      const showScheduling = currentMode === "scheduling" || currentMode === "manager";
+      const canUploadPhotos = currentMode === "van" || currentMode === "scheduling" || currentMode === "manager";
+      const showCosts = currentMode !== "van";
+
+      const beforePhotos = (job.photos || []).filter(p => p.tag === "before");
+      const afterPhotos = (job.photos || []).filter(p => p.tag === "after");
+
+      panel.innerHTML = `
+        <div class="card">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+            <div>
+              <h2>${currentMode === "van" ? "Job" : (job.contractor?.companyName || job.contractor?.contactName || "No Contractor")}</h2>
+              <div>${job.serviceAddress}</div>
+              <div class="muted">Date: ${job.serviceDate}</div>
+              <div class="status-pill ${statusClass(job.status)}">${job.status.replaceAll("_", " ")}</div>
+            </div>
+            <div>
+              <span class="pill">Hours: ${job.totalHours}</span>
+              <span class="pill">Travel: ${job.totalTravelMinutes} min</span>
+              ${showCosts ? `<span class="pill">Total: ${formatCurrency(job.totalCost)}</span>` : ""}
+            </div>
+          </div>
+
+          ${job.notes ? `<div class="muted" style="margin-top:10px;">Notes: ${job.notes}</div>` : ""}
+
+          ${showScheduling ? `
+            <div class="row" style="margin-top:12px;">
+              <button onclick="toggleEditJob(${job.id})">${editing ? "Close Edit" : "Edit Job"}</button>
+              <button class="secondary" onclick="openInvoice(${job.id})">View Invoice</button>
+            </div>
+            <div class="row" style="margin-top:6px;">
+              <button class="secondary" onclick="archiveJob(${job.id})">Archive Job</button>
+              <button class="red" onclick="deleteJob(${job.id})">Delete Job</button>
+            </div>
+          ` : ""}
+
+          ${editing && showScheduling ? `
+            <div class="service-card">
+              <h3>Edit Job</h3>
+              <input id="edit-address-${job.id}" value="${job.serviceAddress || ""}" placeholder="Service address" />
+              <input id="edit-date-${job.id}" type="date" value="${job.serviceDate || ""}" />
+              <textarea id="edit-notes-${job.id}" placeholder="Notes">${job.notes || ""}</textarea>
+
+              ${job.services.map((s, index) => `
+                <div class="service-card">
+                  <div class="row">
+                    <div>
+                      <label>Category</label>
+                      <select id="edit-category-${job.id}-${index}">
+                        ${Object.keys(serviceOptions).map(cat =>
+                          `<option value="${cat}" ${cat === s.category ? "selected" : ""}>${cat}</option>`
+                        ).join("")}
+                      </select>
+                    </div>
+                    <div>
+                      <label>Service Type</label>
+                      <select id="edit-subtype-${job.id}-${index}">
+                        ${serviceOptions[s.category].map(opt =>
+                          `<option value="${opt}" ${opt === s.subtype ? "selected" : ""}>${opt}</option>`
+                        ).join("")}
+                      </select>
+                    </div>
+                  </div>
+
+                  ${isHourly(s) ? `
+                    <div class="row">
+                      <input id="edit-crew-${job.id}-${index}" type="number" min="1" value="${s.crewSize || 1}" placeholder="Crew size" />
+                      <input id="edit-hours-${job.id}-${index}" type="number" step="0.25" min="0" value="${s.hoursManual || 0}" placeholder="Manual hours" />
+                    </div>
+                    <div class="row-3">
+                      <input id="edit-onmyway-${job.id}-${index}" type="datetime-local" value="${toLocalInputValue(s.onMyWayTime)}" />
+                      <input id="edit-arrived-${job.id}-${index}" type="datetime-local" value="${toLocalInputValue(s.arrivedTime)}" />
+                      <input id="edit-start-${job.id}-${index}" type="datetime-local" value="${toLocalInputValue(s.startTime)}" />
+                    </div>
+                    <div class="row">
+                      <input id="edit-stop-${job.id}-${index}" type="datetime-local" value="${toLocalInputValue(s.endTime)}" />
+                      <div class="muted" style="padding-top:14px;">Materials are added on finish.</div>
+                    </div>
+                  ` : ""}
+
+                  ${s.category === "Junk" ? `
+                    <select id="edit-junk-${job.id}-${index}">
+                      ${junkOptions.map(o =>
+                        `<option value="${o.label}" ${o.label === s.junkLoad ? "selected" : ""}>${o.label} - $${o.price}</option>`
+                      ).join("")}
+                    </select>
+                  ` : ""}
+
+                  ${isConcrete(s) ? `
+                    <input id="edit-feet-${job.id}-${index}" type="number" min="0" step="1" value="${s.linearFeet || 0}" placeholder="Linear feet" />
+                  ` : ""}
+                </div>
+              `).join("")}
+
+              <div class="row">
+                <button class="green" onclick="saveJobEdit(${job.id})">Save Job Changes</button>
+                <button class="secondary" onclick="toggleEditJob(${job.id})">Cancel</button>
+              </div>
+            </div>
+          ` : ""}
+
+          <div style="margin-top:12px;">
+            ${job.services.map((s, index) => `
+              <div class="service-card">
+                <strong>${s.category} — ${s.subtype}</strong>
+                <div class="muted" style="margin-top:6px;">
+                  ${currentMode === "van" ? "" : (isHourly(s) ? `Crew: ${s.crewSize} • Billable Hours: ${s.hoursWorked}` : "")}
+                  ${s.category === "Junk" ? `Load: ${s.junkLoad}` : ""}
+                  ${isConcrete(s) ? `Linear feet: ${s.linearFeet}` : ""}
+                </div>
+                <div class="muted" style="margin-top:6px;">
+                  Travel: ${s.travelMinutes || 0} min
+                </div>
+
+                ${showCosts ? `
+                  <div class="muted" style="margin-top:6px;">Materials: ${formatCurrency(s.materialsTotal || 0)}</div>
+                  <div style="font-weight:bold; margin-top:8px;">Service Total: ${formatCurrency(s.total)}</div>
+                ` : ""}
+
+                ${isHourly(s) ? `
+                  <div class="row-3" style="margin-top:10px;">
+                    <button class="secondary" onclick="jobAction('/jobs/${job.id}/services/${index}/on-my-way')">On My Way</button>
+                    <button class="secondary" onclick="jobAction('/jobs/${job.id}/services/${index}/arrived')">Arrived</button>
+                    <button class="green" onclick="jobAction('/jobs/${job.id}/services/${index}/start')">Start Job</button>
+                  </div>
+                  <div class="row" style="margin-top:10px;">
+                    <button class="red" onclick="openMaterialsModal(${job.id}, ${index})">Stop Job</button>
+                    ${currentMode === "van"
+                      ? `<button class="secondary" onclick="window.print()">Print Screen</button>`
+                      : `<button class="secondary" onclick="openInvoice(${job.id})">Invoice</button>`}
+                  </div>
+                  <div class="muted" style="margin-top:8px;">
+                    On My Way: ${s.onMyWayTime ? new Date(s.onMyWayTime).toLocaleString() : "—"}<br>
+                    Arrived: ${s.arrivedTime ? new Date(s.arrivedTime).toLocaleString() : "—"}<br>
+                    Start: ${s.startTime ? new Date(s.startTime).toLocaleString() : "—"}<br>
+                    Stop: ${s.endTime ? new Date(s.endTime).toLocaleString() : "—"}
+                  </div>
+                ` : `
+                  <div class="row" style="margin-top:10px;">
+                    ${currentMode === "van"
+                      ? `<button class="secondary" onclick="window.print()">Print Screen</button>`
+                      : `<button class="secondary" onclick="openInvoice(${job.id})">Invoice</button>`}
+                    ${showManager ? `<button class="secondary" onclick="window.print()">Print Screen</button>` : ""}
+                  </div>
+                `}
+
+                ${showCosts && s.materialsBreakdown?.length ? `
+                  <div class="service-card" style="margin-top:10px;">
+                    <strong>Materials</strong>
+                    ${s.materialsBreakdown.map(m => `
+                      <div class="muted">${m.label}: ${m.qty} ${m.unitLabel} = ${formatCurrency(m.total)}</div>
+                    `).join("")}
+                  </div>
+                ` : ""}
+              </div>
+            `).join("")}
+          </div>
+
+          <div class="service-card">
+            <h3>Before / After Photos</h3>
+
+            ${canUploadPhotos ? `
+              <div class="row">
+                <select id="photo-tag-${job.id}">
+                  <option value="before">Before</option>
+                  <option value="after">After</option>
+                </select>
+                <input id="photo-file-${job.id}" type="file" accept="image/*" />
+              </div>
+              <input id="photo-caption-${job.id}" placeholder="Photo caption (optional)" />
+              <button class="green" onclick="uploadPhoto(${job.id})">Upload Photo</button>
+            ` : ""}
+
+            <div style="margin-top:16px;">
+              <h3>Before</h3>
+              ${beforePhotos.length ? `
+                <div class="photos">
+                  ${beforePhotos.map(p => `
+                    <div class="photo-box">
+                      <img src="${p.url}" alt="${p.tag}" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" />
+                      <div class="muted">${p.caption || ""}</div>
+                      ${currentMode !== 'van' ? `<button class="red" onclick="deletePhoto(${job.id}, ${p.id})">Delete</button>` : ""}
+                    </div>
+                  `).join("")}
+                </div>
+              ` : `<div class="muted">No before photos.</div>`}
+            </div>
+
+            <div style="margin-top:16px;">
+              <h3>After</h3>
+              ${afterPhotos.length ? `
+                <div class="photos">
+                  ${afterPhotos.map(p => `
+                    <div class="photo-box">
+                      <img src="${p.url}" alt="${p.tag}" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" />
+                      <div class="muted">${p.caption || ""}</div>
+                      ${currentMode !== 'van' ? `<button class="red" onclick="deletePhoto(${job.id}, ${p.id})">Delete</button>` : ""}
+                    </div>
+                  `).join("")}
+                </div>
+              ` : `<div class="muted">No after photos.</div>`}
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    async function jobAction(url) {
+      const res = await fetch(url, { method: "POST" });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      await refreshAll(true);
+    }
+
+    async function uploadPhoto(jobId) {
+      const fileInput = document.getElementById(`photo-file-${jobId}`);
+      const tagSelect = document.getElementById(`photo-tag-${jobId}`);
+      const captionInput = document.getElementById(`photo-caption-${jobId}`);
+
+      if (!fileInput.files.length) {
+        alert("Choose a photo first");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("photo", fileInput.files[0]);
+      formData.append("tag", tagSelect.value);
+      formData.append("caption", captionInput.value || "");
+
+      const res = await fetch(`/jobs/${jobId}/photos`, {
+        method: "POST",
+        body: formData
+      });
+
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      await refreshAll(true);
+      alert("Photo uploaded");
+    }
+
+    async function deletePhoto(jobId, photoId) {
+      const res = await fetch(`/jobs/${jobId}/photos/${photoId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      await refreshAll(true);
+    }
+
+    function openPhotoModal(url, caption) {
+      document.getElementById("photoModalImg").src = url;
+      document.getElementById("photoModalCaption").innerText = caption || "";
+      document.getElementById("photoModal").classList.remove("hidden");
+    }
+
+    function closePhotoModal() {
+      document.getElementById("photoModal").classList.add("hidden");
+    }
+
+    function openMaterialsModal(jobId, serviceIndex) {
+      const job = currentJobs.find(j => j.id === jobId);
+      if (!job) return;
+      const service = job.services[serviceIndex];
+      if (!service) return;
+
+      currentMaterialsContext = { jobId, serviceIndex };
+
+      const showPrices = currentMode !== "van";
+      const autoText = cleaningAutoChargeText(service);
+
+      const body = document.getElementById("materialsModalBody");
+      body.innerHTML = `
+        <div class="service-card">
+          <strong>${service.category} — ${service.subtype}</strong>
+          ${autoText ? `<div class="muted" style="margin-top:8px;">${autoText}${showPrices ? " $45 is added automatically." : ""}</div>` : ""}
+        </div>
+        ${materialDefs.map(def => `
+          <div class="row" style="align-items:end;">
+            <div>
+              <label>${def.label}${showPrices ? ` (${formatCurrency(def.price)} each)` : ""}</label>
+              <input
+                id="material-${def.key}"
+                type="number"
+                min="0"
+                step="${def.wholeOnly ? 1 : 0.25}"
+                value="${service.materialsUsed?.[def.key] || 0}"
+              />
+            </div>
+            <div class="muted">${def.unitLabel}</div>
+          </div>
+        `).join("")}
+      `;
+
+      document.getElementById("materialsModal").classList.remove("hidden");
+    }
+
+    function closeMaterialsModal() {
+      document.getElementById("materialsModal").classList.add("hidden");
+      currentMaterialsContext = null;
+    }
+
+    async function skipMaterialsAndStop() {
+      if (!currentMaterialsContext) return;
+      const { jobId, serviceIndex } = currentMaterialsContext;
+
+      const res = await fetch(`/jobs/${jobId}/services/${serviceIndex}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialsUsed: {} })
+      });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      closeMaterialsModal();
+      await refreshAll(true);
+    }
+
+    async function saveMaterialsAndStop() {
+      if (!currentMaterialsContext) return;
+      const { jobId, serviceIndex } = currentMaterialsContext;
+
+      const materialsUsed = {};
+      for (const def of materialDefs) {
+        materialsUsed[def.key] = Number(document.getElementById(`material-${def.key}`).value || 0);
+      }
+
+      const res = await fetch(`/jobs/${jobId}/services/${serviceIndex}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialsUsed })
+      });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      closeMaterialsModal();
+      await refreshAll(true);
+    }
+
+    async function openFinishDaySummary() {
+      const date = document.getElementById("dailyDate").value || dailySetup.date;
+      const res = await fetch(`/finish-day-summary?date=${encodeURIComponent(date)}`);
+      finishDaySummaryCache = await res.json();
+
+      const body = document.getElementById("finishDaySummaryBody");
+      body.innerHTML = `
+        <div class="service-card">
+          <div><strong>Date:</strong> ${finishDaySummaryCache.date}</div>
+          <div><strong>Total Jobs:</strong> ${finishDaySummaryCache.totalJobs}</div>
+          <div><strong>Travel:</strong> ${finishDaySummaryCache.totalTravelMinutes} min</div>
+          <div><strong>Lunch:</strong> ${finishDaySummaryCache.lunchMinutes} min</div>
+          <div><strong>Photos:</strong> ${finishDaySummaryCache.totalPhotos}</div>
+          <div><strong>Materials:</strong> ${formatCurrency(finishDaySummaryCache.totalMaterials)}</div>
+        </div>
+        ${(finishDaySummaryCache.jobs || []).map(j => `
+          <div class="history-row">
+            <strong>Job #${j.id}</strong>
+            <div>${j.address}</div>
+            <div class="muted">Status: ${j.status} • Hours: ${j.totalHours} • Photos: ${j.photos}</div>
+          </div>
+        `).join("")}
+      `;
+
+      document.getElementById("finishDayModal").classList.remove("hidden");
+    }
+
+    function closeFinishDaySummary() {
+      document.getElementById("finishDayModal").classList.add("hidden");
+    }
+
+    async function confirmFinishDay() {
+      if (!finishDaySummaryCache) return;
+
+      const res = await fetch("/finish-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: finishDaySummaryCache.date })
+      });
+
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      closeFinishDaySummary();
+      await refreshAll(true);
+      alert(`Finished ${data.finishedJobs} job(s). Your invoice ZIP will download now.`);
+      window.open(data.downloadUrl, "_blank");
+    }
+
+    function renderScheduleBoard() {
+      const strip = document.getElementById("scheduleOrderStrip");
+      if (!strip) return;
+
+      if (!currentJobs.length) {
+        strip.innerHTML = `<span class="dot">No jobs scheduled</span>`;
+        return;
+      }
+
+      strip.innerHTML = currentJobs.map((job, idx) => `
+        <span class="dot">${idx + 1}. ${job.serviceAddress}</span>
+      `).join("");
+    }
+
+    function onDragStart(ev, id) {
+      if (currentMode !== "scheduling") return;
+      draggingJobId = id;
+      ev.dataTransfer.effectAllowed = "move";
+      ev.currentTarget.classList.add("dragging");
+    }
+
+    function onDragEnd(ev) {
+      ev.currentTarget.classList.remove("dragging");
+    }
+
+    function onDragOver(ev) {
+      if (currentMode !== "scheduling") return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+    }
+
+    async function onDrop(ev, targetId) {
+      if (currentMode !== "scheduling") return;
+      ev.preventDefault();
+      if (!draggingJobId || draggingJobId === targetId) return;
+
+      const arr = [...currentJobs];
+      const fromIndex = arr.findIndex(j => j.id === draggingJobId);
+      const toIndex = arr.findIndex(j => j.id === targetId);
+      if (fromIndex < 0 || toIndex < 0) return;
+
+      const [moved] = arr.splice(fromIndex, 1);
+      arr.splice(toIndex, 0, moved);
+      currentJobs = arr;
+      renderJobList();
+      renderScheduleBoard();
+
+      const date = document.getElementById("scheduleDate").value || dailySetup.date;
+      await fetch("/jobs/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date,
+          orderedIds: arr.map(j => j.id)
+        })
+      });
+
+      await refreshAll(true);
+    }
+
+    document.addEventListener("change", async (e) => {
+      if (e.target.id === "scheduleDate") {
+        await refreshAll(true);
+      }
+      if (e.target.id === "dailyDate") {
+        await refreshAll(true);
+      }
+      if (e.target.id === "contractorSelect") {
+        syncSavedServiceAddresses();
+      }
+    });
+
+    window.addEventListener("focus", async () => {
+      await refreshAll(false);
+    });
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(console.error);
+    }
+
+    init();
+  </script>
+</body>
+</html>
