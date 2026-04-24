@@ -1,4 +1,6 @@
 node_modules
 uploads
 exports
-db.json
+.env
+.db_store
+thumbs.db

@@ -1,0 +1,720 @@
+{
+  "contractors": [
+    {
+      "id": 1,
+      "companyName": "10 Marion Avenue",
+      "contactName": "10 Marion Avenue",
+      "billingAddress": "10 Marion Avenue, Howell Township, NJ 07731",
+      "phone": "(845) 633-0664",
+      "email": "18skah@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.454Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 2,
+      "companyName": "1040 Central Avenue",
+      "contactName": "1040 Central Avenue",
+      "billingAddress": "1040 Central Avenue, Lakewood, NJ 08701",
+      "phone": "9292130975",
+      "email": "Manniegibber@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 3,
+      "companyName": "",
+      "contactName": "1613 Beacon",
+      "billingAddress": "1613 Beacon Street, Toms River, NJ 08757",
+      "phone": "",
+      "email": "Phillip@pmsco.cpa",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 4,
+      "companyName": "",
+      "contactName": "Ahuva Golombeck",
+      "billingAddress": "8 Weston Court, Jackson, NJ 08527",
+      "phone": "(732) 882-8081",
+      "email": "Lubowskya@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 5,
+      "companyName": "Attune Insurance",
+      "contactName": "Attune Insurance",
+      "billingAddress": "",
+      "phone": "",
+      "email": "",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 6,
+      "companyName": "Sterling Forest Shul Ashkenaz",
+      "contactName": "Chaim Kogel",
+      "billingAddress": "144 Hadassah Lane, Lakewood, NJ 08701",
+      "phone": "(347) 731-1820",
+      "email": "info@sterlingforest.org",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 7,
+      "companyName": "",
+      "contactName": "Chavi Shapiro",
+      "billingAddress": "26 Citadel Drive, Jackson, NJ",
+      "phone": "(347) 906-2584",
+      "email": "Chavishap1@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 8,
+      "companyName": "CMR Design",
+      "contactName": "CMR Design",
+      "billingAddress": "",
+      "phone": "(848) 400-8161",
+      "email": "Orders@cmr-design.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 9,
+      "companyName": "GSL Management",
+      "contactName": "GSL Management",
+      "billingAddress": "24 Shayas Rd, Lakewood, NJ 08701",
+      "phone": "7322784545",
+      "email": "leorazoolay@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 10,
+      "companyName": "",
+      "contactName": "Hershy Gluck",
+      "billingAddress": "205 Hadassah Lane, Lakewood, NJ 08701",
+      "phone": "(347) 675-5629",
+      "email": "Leahgluck41@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 11,
+      "companyName": "Howell Township Development LLC",
+      "contactName": "Howell Township Development LLC",
+      "billingAddress": "1515 Pine Street Suite 202, Lakewood, NJ 08701",
+      "phone": "732-276-9525 x503",
+      "email": "Tova@thetroisgroup.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 12,
+      "companyName": "",
+      "contactName": "Ilana Maslaton",
+      "billingAddress": "6 Gvuras Ari Drive, Lakewood, NJ 08701",
+      "phone": "(917) 771-8002",
+      "email": "iym201@nyu.edu",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 13,
+      "companyName": "Integris Contracting",
+      "contactName": "Integris Contracting",
+      "billingAddress": "",
+      "phone": "7328598483",
+      "email": "Moshe@integrissvc.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 14,
+      "companyName": "Lakewood Painting and Remodeling",
+      "contactName": "",
+      "billingAddress": "",
+      "phone": "(732) 995-3481",
+      "email": "office@redkeymanagement.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 15,
+      "companyName": "",
+      "contactName": "Malkiel Busu",
+      "billingAddress": "287 Cathy Lane, Lakewood, NJ 08701",
+      "phone": "(917) 628-7515",
+      "email": "Malkielbussu26@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 16,
+      "companyName": "",
+      "contactName": "Mordechai Berger",
+      "billingAddress": "17 Georgian Blvd, Jackson, NJ 08527",
+      "phone": "",
+      "email": "bernsteinbracha126@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 17,
+      "companyName": "",
+      "contactName": "Mordechai Miller",
+      "billingAddress": "",
+      "phone": "(718) 288-4317",
+      "email": "",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 18,
+      "companyName": "",
+      "contactName": "Mr Brecher",
+      "billingAddress": "",
+      "phone": "(848) 362-1402",
+      "email": "brecherel@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 19,
+      "companyName": "",
+      "contactName": "Mr. Fogel",
+      "billingAddress": "17 Elana Drive, Jackson, NJ 08527",
+      "phone": "(732) 966-2594",
+      "email": "72fogel@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 20,
+      "companyName": "",
+      "contactName": "Mrs Zafrani",
+      "billingAddress": "41 Cambridge Drive, Jackson, NJ 08527",
+      "phone": "(917) 538-6544",
+      "email": "Rachelihr99@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 21,
+      "companyName": "",
+      "contactName": "Shimon Kamin",
+      "billingAddress": "",
+      "phone": "(732) 874-1527",
+      "email": "shmnka111@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 22,
+      "companyName": "",
+      "contactName": "Shlomo Berney",
+      "billingAddress": "",
+      "phone": "(917) 533-0907",
+      "email": "Shloberney@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 23,
+      "companyName": "The Flooring People",
+      "contactName": "The Flooring People",
+      "billingAddress": "",
+      "phone": "(718) 541-2961",
+      "email": "josh@theflooringpeoplenj.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 24,
+      "companyName": "Way To Go New Jersey",
+      "contactName": "Way To Go New Jersey",
+      "billingAddress": "",
+      "phone": "(973) 913-4875",
+      "email": "Billing@waytogonj.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 25,
+      "companyName": "",
+      "contactName": "Yenny Mermel",
+      "billingAddress": "9 Lenox Drive, Lakewood, NJ 08701",
+      "phone": "(732) 569-4565",
+      "email": "yennymermel@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 26,
+      "companyName": "",
+      "contactName": "Yoni Braun",
+      "billingAddress": "",
+      "phone": "",
+      "email": "eliezerjbraun@gmail.com",
+      "paymentTerms": "",
+      "createdAt": "2026-04-20T21:42:28.455Z",
+      "serviceAddresses": []
+    },
+    {
+      "id": 27,
+      "companyName": "unk",
+      "contactName": "",
+      "email": "",
+      "phone": "",
+      "billingAddress": "",
+      "paymentTerms": "",
+      "serviceAddresses": [
+        "104 summit ct lakewood nj"
+      ],
+      "createdAt": "2026-04-21T12:48:02.463Z"
+    }
+  ],
+  "jobs": [
+    {
+      "id": 1,
+      "contractorId": 13,
+      "serviceAddress": "12fg kjwbf",
+      "serviceDate": "2026-04-20",
+      "notes": "",
+      "services": [
+        {
+          "category": "Cleaning",
+          "subtype": "Post construction cleanup",
+          "crewSize": 2,
+          "hoursManual": 0,
+          "startTime": "2026-04-20T21:56:31.830Z",
+          "endTime": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "hoursWorked": 0,
+          "total": 0
+        }
+      ],
+      "createdAt": "2026-04-20T21:43:03.638Z",
+      "status": "in_progress",
+      "finishedAt": null,
+      "archivedAt": null,
+      "deletedAt": "2026-04-21T12:46:25.893Z",
+      "sortOrder": 0,
+      "photos": []
+    },
+    {
+      "id": 2,
+      "contractorId": 13,
+      "serviceAddress": "44 canary dr",
+      "serviceDate": "2026-04-20",
+      "notes": "",
+      "status": "open",
+      "finishedAt": null,
+      "services": [
+        {
+          "category": "Labor",
+          "subtype": "General labor",
+          "crewSize": 2,
+          "hoursManual": 0,
+          "onMyWayTime": "2026-04-20T21:53:41.015Z",
+          "arrivedTime": "2026-04-20T21:53:46.900Z",
+          "startTime": "2026-04-20T21:53:48.144Z",
+          "endTime": "2026-04-20T21:53:54.817Z",
+          "lunchBreaks": [],
+          "downtimes": [],
+          "activeLunchStart": null,
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "travelMinutes": 0,
+          "lunchMinutes": 0,
+          "downtimeMinutes": 0,
+          "hoursWorked": 0,
+          "total": 0
+        }
+      ],
+      "createdAt": "2026-04-20T21:53:37.485Z",
+      "archivedAt": null,
+      "deletedAt": "2026-04-21T12:46:20.475Z",
+      "sortOrder": 0,
+      "photos": []
+    },
+    {
+      "id": 3,
+      "contractorId": 27,
+      "serviceAddress": "104 summit ct lakewood nj",
+      "serviceDate": "2026-04-20",
+      "notes": "",
+      "status": "scheduled",
+      "finishedAt": null,
+      "archivedAt": null,
+      "deletedAt": "2026-04-21T12:49:05.692Z",
+      "sortOrder": 1,
+      "services": [
+        {
+          "category": "Labor",
+          "subtype": "General labor",
+          "crewSize": 2,
+          "hoursManual": 0,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": null,
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 0,
+          "materialsBreakdown": [],
+          "materialsTotal": 0,
+          "baseTotal": 0,
+          "total": 0
+        }
+      ],
+      "photos": [],
+      "createdAt": "2026-04-21T12:48:15.207Z"
+    },
+    {
+      "id": 4,
+      "contractorId": 27,
+      "serviceAddress": "104 summit ct lakewood nj",
+      "serviceDate": "2026-04-20",
+      "notes": "",
+      "status": "scheduled",
+      "finishedAt": null,
+      "archivedAt": null,
+      "deletedAt": null,
+      "sortOrder": 2,
+      "services": [
+        {
+          "category": "Labor",
+          "subtype": "General labor",
+          "crewSize": 2,
+          "hoursManual": 1,
+          "onMyWayTime": "2026-04-21T12:49:16.658Z",
+          "arrivedTime": "2026-04-21T12:49:28.562Z",
+          "startTime": "2026-04-21T12:49:29.407Z",
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 1,
+          "materialsBreakdown": [],
+          "materialsTotal": 0,
+          "baseTotal": 70,
+          "total": 70
+        }
+      ],
+      "photos": [],
+      "createdAt": "2026-04-21T12:48:54.561Z"
+    },
+    {
+      "id": 5,
+      "contractorId": 13,
+      "serviceAddress": "265 s new prospect",
+      "serviceDate": "2026-04-20",
+      "notes": "",
+      "status": "scheduled",
+      "finishedAt": null,
+      "archivedAt": null,
+      "deletedAt": null,
+      "sortOrder": 3,
+      "services": [
+        {
+          "category": "Cleaning",
+          "subtype": "Site cleanup",
+          "crewSize": 2,
+          "hoursManual": 0,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": "2026-04-21T13:23:13.148Z",
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 0,
+          "materialsBreakdown": [],
+          "materialsTotal": 0,
+          "baseTotal": 0,
+          "total": 0
+        },
+        {
+          "category": "Junk",
+          "subtype": "Junk removal",
+          "crewSize": 1,
+          "hoursManual": 0,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": null,
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 0,
+          "materialsBreakdown": [],
+          "materialsTotal": 0,
+          "baseTotal": 175,
+          "total": 175
+        }
+      ],
+      "photos": [],
+      "createdAt": "2026-04-21T12:50:27.515Z"
+    },
+    {
+      "id": 6,
+      "contractorId": 13,
+      "serviceAddress": "265 s new prospect jackson",
+      "serviceDate": "2026-04-20",
+      "notes": "",
+      "status": "scheduled",
+      "finishedAt": null,
+      "archivedAt": null,
+      "deletedAt": null,
+      "sortOrder": 4,
+      "services": [
+        {
+          "category": "Cleaning",
+          "subtype": "Deep clean",
+          "crewSize": 2,
+          "hoursManual": 0,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": null,
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 0,
+          "materialsBreakdown": [
+            {
+              "key": "cleaning_supplies_auto",
+              "label": "Cleaning supplies",
+              "qty": 1,
+              "unitLabel": "flat",
+              "price": 45,
+              "total": 45,
+              "auto": true
+            }
+          ],
+          "materialsTotal": 45,
+          "baseTotal": 0,
+          "total": 45
+        },
+        {
+          "category": "Junk",
+          "subtype": "Junk removal",
+          "crewSize": 1,
+          "hoursManual": 0,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": null,
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 0,
+          "materialsBreakdown": [],
+          "materialsTotal": 0,
+          "baseTotal": 175,
+          "total": 175
+        }
+      ],
+      "photos": [],
+      "createdAt": "2026-04-21T13:23:43.936Z"
+    }
+  ],
+  "dailySetup": {
+    "date": "2026-04-20",
+    "crewSize": 2,
+    "lunchBreaks": [],
+    "activeLunchStart": null,
+    "dailyChecklistState": {}
+  },
+  "estimates": [
+    {
+      "id": 1,
+      "contractorId": 27,
+      "serviceAddress": "dgdfgh",
+      "notes": "",
+      "status": "open",
+      "services": [
+        {
+          "category": "Cleaning",
+          "subtype": "Post construction cleanup",
+          "crewSize": 2,
+          "hoursManual": 4,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": null,
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 4,
+          "materialsBreakdown": [
+            {
+              "key": "cleaning_supplies_auto",
+              "label": "Cleaning supplies",
+              "qty": 1,
+              "unitLabel": "flat",
+              "price": 45,
+              "total": 45,
+              "auto": true
+            }
+          ],
+          "materialsTotal": 45,
+          "baseTotal": 256,
+          "total": 301
+        }
+      ],
+      "createdAt": "2026-04-21T13:31:21.401Z"
+    },
+    {
+      "id": 2,
+      "contractorId": 27,
+      "serviceAddress": "shst",
+      "notes": "h",
+      "status": "open",
+      "services": [
+        {
+          "category": "Cleaning",
+          "subtype": "Post construction cleanup",
+          "crewSize": 1,
+          "hoursManual": 4.25,
+          "onMyWayTime": null,
+          "arrivedTime": null,
+          "startTime": null,
+          "endTime": null,
+          "downtimes": [],
+          "activeDowntimeStart": null,
+          "junkLoad": "Quarter load",
+          "junkPrice": 175,
+          "linearFeet": 0,
+          "materialsUsed": {
+            "contractor_bags": 0,
+            "zipper": 0,
+            "heavy_ramboard": 0,
+            "medium_ramboard": 0,
+            "contractor_paper": 0
+          },
+          "travelMinutes": 0,
+          "hoursWorked": 4.25,
+          "materialsBreakdown": [
+            {
+              "key": "cleaning_supplies_auto",
+              "label": "Cleaning supplies",
+              "qty": 1,
+              "unitLabel": "flat",
+              "price": 45,
+              "total": 45,
+              "auto": true
+            }
+          ],
+          "materialsTotal": 45,
+          "baseTotal": 136,
+          "total": 181
+        }
+      ],
+      "createdAt": "2026-04-21T13:31:38.111Z"
+    }
+  ],
+  "inventoryLink": ""
+}
