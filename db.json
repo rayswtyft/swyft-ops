@@ -1,5 +1,6 @@
+
 {
-    "contractors": [
+  "contractors": [
     {
       "id": 1,
       "companyName": "1040 Central Avenue",
@@ -392,224 +393,358 @@
     }
   ],
   "jobs": [],
-  "estimates": []
-
-  "jobs": [],
   "estimates": [],
   "inventory": [
     {
+      "id": "inv-001",
       "key": "bleach_powder",
       "name": "Bleach powder",
       "quantity": 12,
       "unit": "containers",
-      "reorderPoint": 4
+      "reorderPoint": 6,
+      "active": true
     },
     {
+      "id": "inv-002",
       "key": "latex_gloves",
       "name": "Box of latex gloves",
       "quantity": 2,
       "unit": "boxes",
-      "reorderPoint": 1
+      "reorderPoint": 1,
+      "active": true
     },
     {
+      "id": "inv-003",
+      "key": "clorox_bathroom_spray",
+      "name": "Clorox bathroom spray",
+      "quantity": 12,
+      "unit": "bottles",
+      "reorderPoint": 6,
+      "active": true
+    },
+    {
+      "id": "inv-004",
+      "key": "comet_total_cleaners",
+      "name": "Comet total cleaners",
+      "quantity": 6,
+      "unit": "containers",
+      "reorderPoint": 3,
+      "active": true
+    },
+    {
+      "id": "inv-005",
+      "key": "contractor_bags_stock",
+      "name": "Contractor bags",
+      "quantity": 550,
+      "unit": "bags",
+      "reorderPoint": 500,
+      "active": true,
+      "display": {
+        "mode": "boxesOf50",
+        "label": "boxes",
+        "perBox": 50
+      }
+    },
+    {
+      "id": "inv-006",
+      "key": "dish_soap",
+      "name": "Dish soap",
+      "quantity": 3,
+      "unit": "bottles",
+      "reorderPoint": 1,
+      "active": true
+    },
+    {
+      "id": "inv-007",
+      "key": "floor_cleaner",
+      "name": "Floor cleaner",
+      "quantity": 8,
+      "unit": "bottles",
+      "reorderPoint": 4,
+      "active": true
+    },
+    {
+      "id": "inv-008",
+      "key": "goo_gone",
+      "name": "Goo Gone",
+      "quantity": 4,
+      "unit": "bottles",
+      "reorderPoint": 2,
+      "active": true
+    },
+    {
+      "id": "inv-009",
+      "key": "goof_off",
+      "name": "Goof Off",
+      "quantity": 4,
+      "unit": "bottles",
+      "reorderPoint": 2,
+      "active": true
+    },
+    {
+      "id": "inv-010",
+      "key": "green_scrub_pad",
+      "name": "Green scrub pads",
+      "quantity": 12,
+      "unit": "pads",
+      "reorderPoint": 6,
+      "active": true
+    },
+    {
+      "id": "inv-011",
+      "key": "magic_erasers",
+      "name": "Magic erasers",
+      "quantity": 12,
+      "unit": "pieces",
+      "reorderPoint": 6,
+      "active": true
+    },
+    {
+      "id": "inv-012",
+      "key": "oven_cleaner",
+      "name": "Oven cleaners",
+      "quantity": 12,
+      "unit": "cans",
+      "reorderPoint": 6,
+      "active": true
+    },
+    {
+      "id": "inv-013",
+      "key": "rags",
+      "name": "Rags",
+      "quantity": 28,
+      "unit": "pieces",
+      "reorderPoint": 14,
+      "active": true
+    },
+    {
+      "id": "inv-014",
+      "key": "paper_towel_rolls",
+      "name": "Paper towel rolls",
+      "quantity": 24,
+      "unit": "rolls",
+      "reorderPoint": 12,
+      "active": true
+    },
+    {
+      "id": "inv-015",
+      "key": "scrub_daddy",
+      "name": "Scrub Daddy",
+      "quantity": 8,
+      "unit": "pieces",
+      "reorderPoint": 4,
+      "active": true
+    },
+    {
+      "id": "inv-016",
+      "key": "soap_water_bottles",
+      "name": "Soap and water bottles",
+      "quantity": 6,
+      "unit": "bottles",
+      "reorderPoint": 3,
+      "active": true
+    },
+    {
+      "id": "inv-017",
+      "key": "clean_mop_heads",
+      "name": "Clean mop heads",
+      "quantity": 6,
+      "unit": "pieces",
+      "reorderPoint": 3,
+      "active": true
+    },
+    {
+      "id": "inv-018",
+      "key": "masks",
+      "name": "Masks",
+      "quantity": 2,
+      "unit": "boxes",
+      "reorderPoint": 1,
+      "active": true
+    },
+    {
+      "id": "inv-019",
+      "key": "ear_protection",
+      "name": "Ear protection",
+      "quantity": 2,
+      "unit": "sets",
+      "reorderPoint": 1,
+      "active": true
+    },
+    {
+      "id": "inv-020",
+      "key": "goggles",
+      "name": "Goggles",
+      "quantity": 2,
+      "unit": "pairs",
+      "reorderPoint": 1,
+      "active": true
+    },
+    {
+      "id": "inv-021",
+      "key": "vapor_barrier_10mil",
+      "name": "10 mil vapor barrier",
+      "quantity": 2,
+      "unit": "rolls",
+      "reorderPoint": 1,
+      "active": true
+    },
+    {
+      "id": "inv-022",
+      "key": "concrete",
+      "name": "Concrete",
+      "quantity": 2,
+      "unit": "bags",
+      "reorderPoint": 1,
+      "active": true
+    },
+    {
+      "id": "inv-023",
       "key": "broom",
       "name": "Broom",
       "quantity": 6,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 3,
+      "active": true
     },
     {
+      "id": "inv-024",
       "key": "buckets",
       "name": "Buckets",
       "quantity": 4,
       "unit": "pieces",
-      "reorderPoint": null
+      "reorderPoint": 2,
+      "active": true
     },
     {
+      "id": "inv-025",
       "key": "carpet_vacuum",
       "name": "Carpet vacuum",
       "quantity": 2,
       "unit": "pieces",
-      "reorderPoint": null
+      "reorderPoint": 1,
+      "active": true
     },
     {
-      "key": "clean_mop_heads",
-      "name": "Clean mop heads",
-      "quantity": 8,
-      "unit": "pieces",
-      "reorderPoint": 6
-    },
-    {
-      "key": "clorox_bathroom_spray",
-      "name": "Clorox bathroom spray",
-      "quantity": 6,
-      "unit": "bottles",
-      "reorderPoint": 3
-    },
-    {
-      "key": "contractor_bags",
-      "name": "Contractor bags",
-      "quantity": 550,
-      "unit": "bags",
-      "displayUnit": "boxes",
-      "displayDivisor": 50,
-      "reorderPoint": 500
-    },
-    {
-      "key": "dish_soap",
-      "name": "Dish soap",
-      "quantity": 5,
-      "unit": "bottles",
-      "reorderPoint": 3
-    },
-    {
+      "id": "inv-026",
       "key": "dish_sponge",
       "name": "Dish sponge",
       "quantity": 6,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 3,
+      "active": true
     },
     {
+      "id": "inv-027",
       "key": "dustpan",
       "name": "Dustpan",
       "quantity": 6,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 3,
+      "active": true
     },
     {
-      "key": "floor_cleaner",
-      "name": "Floor cleaner",
-      "quantity": 11,
-      "unit": "bottles",
-      "reorderPoint": null
+      "id": "inv-028",
+      "key": "garbage_bags",
+      "name": "Garbage bags",
+      "quantity": 10,
+      "unit": "boxes",
+      "reorderPoint": 3,
+      "active": true
     },
     {
-      "key": "goo_gone",
-      "name": "Goo Gone",
-      "quantity": 5,
-      "unit": "bottles",
-      "reorderPoint": 3
-    },
-    {
-      "key": "goof_off",
-      "name": "Goof Off",
-      "quantity": 6,
-      "unit": "bottles",
-      "reorderPoint": 3
-    },
-    {
-      "key": "green_scrub_pad",
-      "name": "Green scrub pad",
-      "quantity": 3,
-      "unit": "pieces",
-      "reorderPoint": 2
-    },
-    {
-      "key": "magic_eraser",
-      "name": "Magic eraser",
-      "quantity": 12,
-      "unit": "pieces",
-      "reorderPoint": 3
-    },
-    {
-      "key": "metal_razor",
-      "name": "Metal razor",
+      "id": "inv-029",
+      "key": "metal_razors",
+      "name": "Metal razors",
       "quantity": 50,
       "unit": "pieces",
-      "reorderPoint": 10
+      "reorderPoint": 10,
+      "active": true
     },
     {
+      "id": "inv-030",
       "key": "metal_sponges",
       "name": "Metal sponges",
       "quantity": 6,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 3,
+      "active": true
     },
     {
+      "id": "inv-031",
       "key": "mop_sticks",
       "name": "Mop sticks",
       "quantity": 3,
       "unit": "pieces",
-      "reorderPoint": null
+      "reorderPoint": 1,
+      "active": true
     },
     {
-      "key": "oven_cleaner",
-      "name": "Oven cleaner",
-      "quantity": 6,
-      "unit": "bottles",
-      "reorderPoint": 5
-    },
-    {
-      "key": "plastic_razor",
-      "name": "Plastic razor",
-      "quantity": 3,
+      "id": "inv-032",
+      "key": "plastic_razors",
+      "name": "Plastic razors",
+      "quantity": 10,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 3,
+      "active": true
     },
     {
-      "key": "rags",
-      "name": "Rags",
-      "quantity": 48,
-      "unit": "pieces",
-      "reorderPoint": 20
-    },
-    {
-      "key": "paper_towel_rolls",
-      "name": "Rolls of paper towel",
-      "quantity": 8,
-      "unit": "rolls",
-      "reorderPoint": 12
-    },
-    {
+      "id": "inv-033",
       "key": "scrub_brush",
       "name": "Scrub brush",
       "quantity": 3,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 1,
+      "active": true
     },
     {
-      "key": "scrub_daddy",
-      "name": "Scrub Daddy",
-      "quantity": 6,
-      "unit": "pieces",
-      "reorderPoint": 3
-    },
-    {
-      "key": "shoulder_vac",
-      "name": "Shoulder vac",
+      "id": "inv-034",
+      "key": "shoulder_vacuum",
+      "name": "Shoulder vacuum",
       "quantity": 2,
       "unit": "pieces",
-      "reorderPoint": null
+      "reorderPoint": 1,
+      "active": true
     },
     {
-      "key": "soap_water_bottles",
-      "name": "Soap and water bottles",
-      "quantity": 3,
-      "unit": "pieces",
-      "reorderPoint": 2
-    },
-    {
-      "key": "squeegee",
-      "name": "Squeegee",
+      "id": "inv-035",
+      "key": "squeegees",
+      "name": "Squeegees",
       "quantity": 4,
       "unit": "pieces",
-      "reorderPoint": 3
+      "reorderPoint": 2,
+      "active": true
     },
     {
+      "id": "inv-036",
       "key": "toilet_brush",
       "name": "Toilet brush",
       "quantity": 12,
       "unit": "pieces",
-      "reorderPoint": 6
+      "reorderPoint": 6,
+      "active": true
+    },
+    {
+      "id": "inv-037",
+      "key": "water_pics",
+      "name": "Water pics",
+      "quantity": 2,
+      "unit": "pieces",
+      "reorderPoint": 1,
+      "active": true
     }
   ],
-  "inventoryLink": "",
-  "quickbooks": {
-    "connected": false,
-    "realmId": "",
-    "accessToken": "",
-    "refreshToken": "",
-    "tokenExpiresAt": ""
+  "settings": {
+    "inventoryLink": "",
+    "quickbooks": {
+      "connected": false,
+      "realmId": null,
+      "accessToken": null,
+      "refreshToken": null,
+      "expiresAt": null,
+      "refreshExpiresAt": null,
+      "lastConnectedAt": null
+    }
   },
   "dailySetup": {
     "date": "",
