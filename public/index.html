@@ -3432,24 +3432,19 @@ if (document.activeElement !== $("serviceDate")) {
 
 
 
-   async function toggleChecklist(item, checked) {
+   async function toggleChecklist(date, item, checked) {
+      const el = event.target.closest(".check-row");
+      if (el) el.classList.toggle("checked", checked);
 
-  // ✅ update UI instantly
-  const el = event.target.closest(".check-item");
-  if (checked) el.classList.add("checked");
-  else el.classList.remove("checked");
-
-  // ✅ send to server in background
-  fetch("/daily-checklist/toggle", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ item, checked })
-  }).catch(() => {
-    // rollback if fails
-    if (checked) el.classList.remove("checked");
-    else el.classList.add("checked");
-  });
-}
+      fetch("/daily-checklist/toggle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, item, checked })
+      }).catch(() => {
+        if (el) el.classList.toggle("checked", !checked);
+        alert("Checklist save failed. Please try again.");
+      });
+    }
 
 
 
@@ -3501,29 +3496,6 @@ async function saveCrewSize() {
   });
 }
 
- fetch("/daily-setup", {
-
-        method:"POST",
-
-        headers:{ "Content-Type":"application/json" },
-
-        body: JSON.stringify({
-
-          date: $("dailyDate").value || dailySetup.date,
-
-          crewSize: Number($("managerCrewSize").value || 1)
-
-        })
-
-      });
-
-
-      alert("Crew size saved");
-
-    }
-
-
-
 async function saveScheduleCrew() {
   const crewSize = Number($("scheduleCrewSize").value || 1);
 
@@ -3542,29 +3514,6 @@ async function saveScheduleCrew() {
     $("syncStatus").innerText = "Crew size save failed";
   });
 }
-      await fetch("/daily-setup", {
-
-        method:"POST",
-
-        headers:{ "Content-Type":"application/json" },
-
-        body: JSON.stringify({
-
-          date: $("scheduleDate").value || dailySetup.date,
-
-          crewSize: Number($("scheduleCrewSize").value || 1)
-
-        })
-
-      });
-
-      await refreshAll(true);
-
-      alert("Scheduling crew size saved");
-
-    }
-
-
 
     async function archiveJob(id){
 
