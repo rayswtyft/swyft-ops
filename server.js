@@ -1161,7 +1161,10 @@ app.get("/daily-setup", (_req, res) => {
 });
 
 app.post("/daily-setup", (req, res) => {
-  const db = readDb();
+  let db = readDb();
+if (!db) db = {};
+if (!db.dailySetup) db.dailySetup = {};
+if (!Array.isArray(db.jobs)) db.jobs = [];
   db.dailySetup.date = cleanString(req.body.date) || todayString();
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
   // Update all unfinished jobs for that day
