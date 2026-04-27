@@ -1169,7 +1169,7 @@ for (const job of db.jobs || []) {
   if (job.serviceDate === db.dailySetup.date) {
     for (const service of job.services || []) {
       if (!service.endTime) {
-        service.crewSize = Number(req.body.crewSize || 1);
+        service.crewSize = db.dailySetup.crewSize;
       }
     }
   }
