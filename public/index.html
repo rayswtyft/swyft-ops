@@ -1536,9 +1536,15 @@
 
       $("scheduleDate").value = dailySetup.date || "";
 
-      $("managerCrewSize").value = dailySetup.crewSize || 1;
+    
+if (document.activeElement !== $("managerCrewSize")) {
+  $("managerCrewSize").value = dailySetup.crewSize || 1;
+}
 
-      $("scheduleCrewSize").value = dailySetup.crewSize || 1;
+if (document.activeElement !== $("scheduleCrewSize")) {
+  $("scheduleCrewSize").value = dailySetup.crewSize || 1;
+}
+
 
       $("serviceDate").value = dailySetup.date || "";
 
@@ -1942,15 +1948,18 @@
 
 
 
-    function renderContractorOptions(list){
+   function renderContractorOptions(list){
+  const oldValue = $("contractorSelect").value;
 
-      $("contractorSelect").innerHTML = list.length
+  $("contractorSelect").innerHTML = list.length
+    ? list.map(c => `<option value="${c.id}">${contractorLabel(c)}</option>`).join("")
+    : `<option value="">No contractors yet</option>`;
 
-        ? list.map(c => `<option value="${c.id}">${contractorLabel(c)}</option>`).join("")
+  if (oldValue && list.some(c => String(c.id) === String(oldValue))) {
+    $("contractorSelect").value = oldValue;
+  }
+}
 
-        : `<option value="">No contractors yet</option>`;
-
-    }
 
 
 
