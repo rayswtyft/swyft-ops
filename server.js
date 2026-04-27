@@ -11,6 +11,7 @@ const axios = require("axios");
 const qs = require("qs");
 const { v4: uuidv4 } = require("uuid");
 const { Server } = require("socket.io");
+const { pool, query } = require("./database");
 
 const app = express();
 const server = http.createServer(app);
@@ -181,76 +182,58 @@ function todayString() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function ensureDb() {
-  if (!fs.existsSync(DB_FILE)) {
-    const seed = {
-      contractors: [],
-      jobs: [],
-      estimates: [],
-      inventory: defaultInventory(),
-      settings: {
-        inventoryLink: "",
-        quickbooks: {
-          connected: false,
-          realmId: null,
-          accessToken: null,
-          refreshToken: null,
-          expiresAt: null,
-          refreshExpiresAt: null,
-          lastConnectedAt: null
-        }
-      },
-      dailySetup: {
-        date: todayString(),
-        crewSize: 1,
-        lunchBreaks: [],
-        activeLunchStart: null,
-        dailyChecklistState: {}
-      }
-    };
 
-    fs.writeFileSync(DB_FILE, JSON.stringify(seed, null, 2));
-  }
+function defaultState() {
+  return {
+    contractors: [],
+    jobs: [],
+    estimates: [],
+    inventory: defaultInventory(),
+    employees: [{ id: 1, name: "Employee 1", active: true }],
+    timeClockEntries: [],
+    settings: {
+      inventoryLink: "",
+      quickbooks: {
+        connected: false,
+        realmId: null,
+        accessToken: null,
+        refreshToken: null,
+        expiresAt: null,
+        refreshExpiresAt: null,
+        lastConnectedAt: null
+      }
+    },
+    dailySetup: {
+      date: todayString(),
+      crewSize: 1,
+      lunchBreaks: [],
+      activeLunchStart: null,
+      dailyChecklistState: {}
+    }
+  };
 }
 
-function readDb() {
-  ensureDb();
-  const db = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+function cloneDb(db) {
+  return JSON.parse(JSON.stringify(db));
+}
 
+function normalizeDbShape(db = {}) {
+  const base = defaultState();
   db.contractors ||= [];
   db.jobs ||= [];
   db.estimates ||= [];
-  db.inventory ||= defaultInventory();
+  db.inventory ||= base.inventory;
+  db.employees ||= base.employees;
+  db.timeClockEntries ||= [];
   db.settings ||= {};
   db.settings.inventoryLink ||= "";
-  db.settings.quickbooks ||= {
-    connected: false,
-    realmId: null,
-    accessToken: null,
-    refreshToken: null,
-    expiresAt: null,
-    refreshExpiresAt: null,
-    lastConnectedAt: null
-  };
-
-  db.dailySetup ||= {
-    date: todayString(),
-    crewSize: 1,
-    lunchBreaks: [],
-    activeLunchStart: null,
-    dailyChecklistState: {}
-  };
-
+  db.settings.quickbooks ||= base.settings.quickbooks;
+  db.dailySetup ||= base.dailySetup;
   db.dailySetup.date ||= todayString();
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
-
-  db.contractors = db.contractors.map(c => ({
-    ...c,
-    serviceAddresses: Array.isArray(c.serviceAddresses) ? c.serviceAddresses : []
-  }));
-
+  db.contractors = db.contractors.map(c => ({ ...c, serviceAddresses: Array.isArray(c.serviceAddresses) ? c.serviceAddresses : [] }));
   db.jobs = db.jobs.map(j => ({
     ...j,
     services: Array.isArray(j.services) ? j.services : [],
@@ -262,19 +245,249 @@ function readDb() {
     quickbooksInvoiceId: j.quickbooksInvoiceId || null,
     sortOrder: Number(j.sortOrder || 0)
   }));
-
-  db.estimates = db.estimates.map(e => ({
-    ...e,
-    services: Array.isArray(e.services) ? e.services : [],
-    status: e.status || "open"
-  }));
-
+  db.estimates = db.estimates.map(e => ({ ...e, services: Array.isArray(e.services) ? e.services : [], status: e.status || "open" }));
+  db.inventory = db.inventory.map(i => ({ ...i, active: i.active !== false }));
+  db.employees = db.employees.map(e => ({ id: e.id, name: e.name || e.fullName || "Unnamed Employee", active: e.active !== false, createdAt: e.createdAt || null }));
+  db.timeClockEntries = db.timeClockEntries.map(t => ({ ...t, employeeId: t.employeeId || null, name: t.name || t.employeeName || "", date: t.date || todayString() }));
   return db;
 }
 
+function ensureDb() {
+  if (!memoryDb) memoryDb = normalizeDbShape(defaultState());
+}
+
+function readDb() {
+  ensureDb();
+  return cloneDb(memoryDb);
+}
+
+function numericIfPossible(v) {
+  const n = Number(v);
+  return !Number.isNaN(n) && /^\d+$/.test(String(v)) ? n : v;
+}
+
+function serviceRowToObject(s) {
+  return {
+    category: s.category || "Cleaning",
+    subtype: s.subtype || "General cleaning",
+    crewSize: Number(s.crew_size || 1),
+    hoursManual: Number(s.hours_manual || 0),
+    linearFeet: Number(s.linear_feet || 0),
+    junkLoad: s.junk_load || "Quarter load",
+    junkPrice: Number(s.junk_price || 175),
+    serviceDate: s.service_date || null,
+    onMyWayTime: s.on_my_way_time || null,
+    arrivedTime: s.arrived_time || null,
+    startTime: s.start_time || null,
+    endTime: s.end_time || null,
+    materialsUsed: s.materials_used || {},
+    inventoryDeductedAt: s.inventory_deducted_at || null
+  };
+}
+
+async function migrateDatabase() {
+  await query(`CREATE TABLE IF NOT EXISTS contractors (id TEXT PRIMARY KEY, company_name TEXT, contact_name TEXT, email TEXT, phone TEXT, billing_address TEXT, payment_terms TEXT, created_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS contractor_addresses (id SERIAL PRIMARY KEY, contractor_id TEXT REFERENCES contractors(id) ON DELETE CASCADE, address TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, service_date TEXT, notes TEXT, created_at TEXT, sort_order INTEGER DEFAULT 0, deleted_at TEXT, archived_at TEXT, finished_at TEXT, quickbooks_status TEXT DEFAULT 'not_sent', quickbooks_invoice_id TEXT, from_estimate_id TEXT, open_status TEXT DEFAULT 'single_day')`);
+  await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS job_photos (id TEXT PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, url TEXT, tag TEXT, caption TEXT, created_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS estimates (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, status TEXT DEFAULT 'open', created_at TEXT, converted_job_id TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, item_key TEXT UNIQUE, name TEXT, quantity NUMERIC, unit TEXT, reorder_point NUMERIC, active BOOLEAN DEFAULT true, display JSONB)`);
+  await query(`CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN DEFAULT true, created_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS daily_setup (id INTEGER PRIMARY KEY, current_date TEXT, crew_size NUMERIC DEFAULT 1, lunch_breaks JSONB DEFAULT '[]'::jsonb, active_lunch_start TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
+  await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
+  await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
+}
+
+async function loadDbFromPostgres() {
+  const db = defaultState();
+  const contractorsRes = await query(`SELECT * FROM contractors ORDER BY id`);
+  const contractorAddressesRes = await query(`SELECT * FROM contractor_addresses ORDER BY id`);
+  db.contractors = contractorsRes.rows.map(c => ({
+    id: numericIfPossible(c.id),
+    companyName: c.company_name || "",
+    contactName: c.contact_name || "",
+    email: c.email || "",
+    phone: c.phone || "",
+    billingAddress: c.billing_address || "",
+    paymentTerms: c.payment_terms || "",
+    serviceAddresses: contractorAddressesRes.rows.filter(a => String(a.contractor_id) === String(c.id)).map(a => a.address).filter(Boolean),
+    createdAt: c.created_at || null
+  }));
+
+  const inventoryRes = await query(`SELECT * FROM inventory ORDER BY name`);
+  db.inventory = inventoryRes.rows.map(i => ({
+    id: i.id,
+    key: i.item_key,
+    name: i.name,
+    quantity: i.quantity === null ? null : Number(i.quantity),
+    unit: i.unit,
+    reorderPoint: i.reorder_point === null ? null : Number(i.reorder_point),
+    active: i.active !== false,
+    display: i.display || null
+  }));
+
+  const jobsRes = await query(`SELECT * FROM jobs ORDER BY service_date, sort_order, id`);
+  const servicesRes = await query(`SELECT * FROM job_services ORDER BY service_index, id`);
+  const photosRes = await query(`SELECT * FROM job_photos ORDER BY created_at, id`);
+  db.jobs = jobsRes.rows.map(j => ({
+    id: numericIfPossible(j.id),
+    contractorId: j.contractor_id,
+    serviceAddress: j.service_address || "",
+    serviceDate: j.service_date || todayString(),
+    notes: j.notes || "",
+    createdAt: j.created_at || null,
+    sortOrder: Number(j.sort_order || 0),
+    deletedAt: j.deleted_at || null,
+    archivedAt: j.archived_at || null,
+    finishedAt: j.finished_at || null,
+    quickbooksStatus: j.quickbooks_status || "not_sent",
+    quickbooksInvoiceId: j.quickbooks_invoice_id || null,
+    fromEstimateId: j.from_estimate_id ? numericIfPossible(j.from_estimate_id) : undefined,
+    openStatus: j.open_status || "single_day",
+    services: servicesRes.rows.filter(s => String(s.job_id) === String(j.id)).map(serviceRowToObject),
+    photos: photosRes.rows.filter(p => String(p.job_id) === String(j.id)).map(p => ({ id: p.id, url: p.url, tag: p.tag, caption: p.caption || "", createdAt: p.created_at || null }))
+  }));
+
+  const estimatesRes = await query(`SELECT * FROM estimates ORDER BY id`);
+  const estimateServicesRes = await query(`SELECT * FROM estimate_services ORDER BY service_index, id`);
+  db.estimates = estimatesRes.rows.map(e => ({
+    id: numericIfPossible(e.id),
+    contractorId: e.contractor_id,
+    serviceAddress: e.service_address || "",
+    notes: e.notes || "",
+    status: e.status || "open",
+    createdAt: e.created_at || null,
+    convertedJobId: e.converted_job_id ? numericIfPossible(e.converted_job_id) : undefined,
+    services: estimateServicesRes.rows.filter(s => String(s.estimate_id) === String(e.id)).map(serviceRowToObject)
+  }));
+
+  const employeesRes = await query(`SELECT * FROM employees ORDER BY active DESC, name`);
+  db.employees = employeesRes.rows.map(e => ({ id: numericIfPossible(e.id), name: e.name, active: e.active !== false, createdAt: e.created_at || null }));
+
+  const timeRes = await query(`SELECT * FROM time_clock_entries ORDER BY clock_in DESC`);
+  db.timeClockEntries = timeRes.rows.map(t => ({ id: numericIfPossible(t.id), employeeId: t.employee_id ? numericIfPossible(t.employee_id) : null, name: t.employee_name, clockIn: t.clock_in, clockOut: t.clock_out, minutes: t.minutes === null ? null : Number(t.minutes), date: t.entry_date }));
+
+  const setupRes = await query(`SELECT * FROM daily_setup WHERE id = 1`);
+  if (setupRes.rows[0]) {
+    const d = setupRes.rows[0];
+    db.dailySetup = { date: d.current_date || todayString(), crewSize: Number(d.crew_size || 1), lunchBreaks: d.lunch_breaks || [], activeLunchStart: d.active_lunch_start || null, dailyChecklistState: {} };
+  }
+
+  const checklistRes = await query(`SELECT * FROM daily_checklist_state`);
+  for (const row of checklistRes.rows) {
+    db.dailySetup.dailyChecklistState[row.check_date] ||= {};
+    db.dailySetup.dailyChecklistState[row.check_date][row.item] = !!row.checked;
+  }
+
+  const settingsRes = await query(`SELECT * FROM settings`);
+  for (const row of settingsRes.rows) {
+    if (row.key === "inventoryLink") db.settings.inventoryLink = row.value?.value || "";
+  }
+
+  const qbRes = await query(`SELECT * FROM quickbooks_tokens WHERE id = 1`);
+  if (qbRes.rows[0]) {
+    const q = qbRes.rows[0];
+    db.settings.quickbooks = {
+      connected: !!q.connected,
+      realmId: q.realm_id || null,
+      accessToken: q.access_token || null,
+      refreshToken: q.refresh_token || null,
+      expiresAt: q.expires_at || null,
+      refreshExpiresAt: q.refresh_expires_at || null,
+      lastConnectedAt: q.last_connected_at || null
+    };
+  }
+
+  return normalizeDbShape(db);
+}
+
+async function insertServiceRow(client, table, parentColumn, parentId, s, index) {
+  await client.query(
+    `INSERT INTO ${table} (${parentColumn}, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+    [parentId, index, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null]
+  );
+}
+
+async function persistDbToPostgres(db) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const tables = ["contractor_addresses","job_photos","job_services","estimate_services","jobs","estimates","contractors","inventory","employees","time_clock_entries","daily_checklist_state","daily_setup","settings","quickbooks_tokens"];
+    for (const table of tables) await client.query(`DELETE FROM ${table}`);
+
+    for (const c of db.contractors || []) {
+      await client.query(`INSERT INTO contractors (id, company_name, contact_name, email, phone, billing_address, payment_terms, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [String(c.id), c.companyName || "", c.contactName || "", c.email || "", c.phone || "", c.billingAddress || "", c.paymentTerms || "", c.createdAt || new Date().toISOString()]);
+      for (const addr of c.serviceAddresses || []) await client.query(`INSERT INTO contractor_addresses (contractor_id, address) VALUES ($1,$2)`, [String(c.id), addr]);
+    }
+
+    for (const item of db.inventory || []) {
+      await client.query(`INSERT INTO inventory (id, item_key, name, quantity, unit, reorder_point, active, display) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [String(item.id || item.key), item.key || String(item.id), item.name || "", item.quantity, item.unit || "", item.reorderPoint, item.active !== false, item.display || null]);
+    }
+
+    for (const job of db.jobs || []) {
+      await client.query(`INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day"]);
+      let index = 0;
+      for (const s of job.services || []) await insertServiceRow(client, "job_services", "job_id", String(job.id), s, index++);
+      for (const p of job.photos || []) await client.query(`INSERT INTO job_photos (id, job_id, url, tag, caption, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, [String(p.id || uuidv4()), String(job.id), p.url || "", p.tag || "before", p.caption || "", p.createdAt || new Date().toISOString()]);
+    }
+
+    for (const est of db.estimates || []) {
+      await client.query(`INSERT INTO estimates (id, contractor_id, service_address, notes, status, created_at, converted_job_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [String(est.id), est.contractorId == null ? null : String(est.contractorId), est.serviceAddress || "", est.notes || "", est.status || "open", est.createdAt || new Date().toISOString(), est.convertedJobId == null ? null : String(est.convertedJobId)]);
+      let index = 0;
+      for (const s of est.services || []) await insertServiceRow(client, "estimate_services", "estimate_id", String(est.id), s, index++);
+    }
+
+    for (const e of db.employees || []) await client.query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`, [String(e.id), e.name || "Unnamed Employee", e.active !== false, e.createdAt || new Date().toISOString()]);
+    for (const t of db.timeClockEntries || []) await client.query(`INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [String(t.id), t.employeeId == null ? null : String(t.employeeId), t.name || t.employeeName || "", t.clockIn || new Date().toISOString(), t.clockOut || null, t.minutes == null ? null : Number(t.minutes), t.date || todayString()]);
+
+    await client.query(`INSERT INTO daily_setup (id, current_date, crew_size, lunch_breaks, active_lunch_start) VALUES (1,$1,$2,$3,$4)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null]);
+    for (const [date, state] of Object.entries(db.dailySetup.dailyChecklistState || {})) {
+      for (const [item, checked] of Object.entries(state || {})) {
+        await client.query(`INSERT INTO daily_checklist_state (check_date, item, checked) VALUES ($1,$2,$3)`, [date, item, !!checked]);
+      }
+    }
+    await client.query(`INSERT INTO settings (key, value) VALUES ($1,$2)`, ["inventoryLink", { value: db.settings.inventoryLink || "" }]);
+    const qb = db.settings.quickbooks || {};
+    await client.query(`INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at) VALUES (1,$1,$2,$3,$4,$5,$6,$7)`, [!!qb.connected, qb.realmId || null, qb.accessToken || null, qb.refreshToken || null, qb.expiresAt || null, qb.refreshExpiresAt || null, qb.lastConnectedAt || null]);
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 function writeDb(db, type = "db_updated", payload = {}) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+  memoryDb = normalizeDbShape(cloneDb(db));
+  persistInFlight = persistInFlight
+    .then(() => persistDbToPostgres(memoryDb))
+    .catch(err => console.error("Postgres persist failed:", err));
   broadcastUpdate(type, payload);
+}
+
+async function initializeDatabaseBackedState() {
+  await migrateDatabase();
+  let loaded = await loadDbFromPostgres();
+  const hasData = (loaded.contractors && loaded.contractors.length) || (loaded.inventory && loaded.inventory.length) || (loaded.jobs && loaded.jobs.length);
+  if (!hasData && fs.existsSync(DB_FILE)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
+      loaded = normalizeDbShape({ ...defaultState(), ...raw });
+      await persistDbToPostgres(loaded);
+      console.log("Seeded Postgres from db.json");
+    } catch (err) {
+      console.error("Could not seed from db.json:", err.message);
+    }
+  }
+  if (!loaded.inventory || !loaded.inventory.length) loaded.inventory = defaultInventory();
+  memoryDb = normalizeDbShape(loaded);
 }
 
 function nextNumericId(items) {
@@ -1806,12 +2019,91 @@ app.post("/qb/send-day", async (req, res) => {
   res.json({ sent, failed, results });
 });
 
+
+/* ---------- EMPLOYEES / TIME CLOCK ---------- */
+
+app.get("/employees", (_req, res) => {
+  const db = readDb();
+  res.json((db.employees || []).filter(e => e.active !== false));
+});
+
+app.post("/employees", (req, res) => {
+  const db = readDb();
+  const employee = { id: nextNumericId(db.employees || []), name: cleanString(req.body.name), active: true, createdAt: new Date().toISOString() };
+  if (!employee.name) return res.status(400).json({ error: "Employee name is required" });
+  db.employees ||= [];
+  db.employees.push(employee);
+  writeDb(db, "employee_added");
+  res.json(employee);
+});
+
+app.put("/employees/:id", (req, res) => {
+  const db = readDb();
+  const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+  if (req.body.name !== undefined) employee.name = cleanString(req.body.name);
+  if (req.body.active !== undefined) employee.active = !!req.body.active;
+  writeDb(db, "employee_updated");
+  res.json(employee);
+});
+
+app.delete("/employees/:id", (req, res) => {
+  const db = readDb();
+  const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+  employee.active = false;
+  writeDb(db, "employee_removed");
+  res.json({ ok: true });
+});
+
+app.get("/time-clock", (req, res) => {
+  const db = readDb();
+  const date = cleanString(req.query.date);
+  let rows = db.timeClockEntries || [];
+  if (date) rows = rows.filter(r => r.date === date);
+  res.json(rows);
+});
+
+app.post("/time-clock/clock-in", (req, res) => {
+  const db = readDb();
+  const employeeId = String(req.body.employeeId || "");
+  const employee = (db.employees || []).find(e => String(e.id) === employeeId && e.active !== false);
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+  db.timeClockEntries ||= [];
+  const active = db.timeClockEntries.find(r => String(r.employeeId) === employeeId && !r.clockOut);
+  if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });
+  const row = { id: nextNumericId(db.timeClockEntries), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString() };
+  db.timeClockEntries.push(row);
+  writeDb(db, "employee_clocked_in");
+  res.json(row);
+});
+
+app.post("/time-clock/clock-out", (req, res) => {
+  const db = readDb();
+  const employeeId = String(req.body.employeeId || "");
+  const employee = (db.employees || []).find(e => String(e.id) === employeeId);
+  if (!employee) return res.status(404).json({ error: "Employee not found" });
+  const row = (db.timeClockEntries || []).find(r => String(r.employeeId) === employeeId && !r.clockOut);
+  if (!row) return res.status(400).json({ error: `${employee.name} is not currently clocked in` });
+  row.clockOut = new Date().toISOString();
+  row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
+  writeDb(db, "employee_clocked_out");
+  res.json(row);
+});
+
 /* ---------- ROOT / HEALTH ---------- */
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Swyft Ops V4 server running on port ${PORT}`);
-});
+initializeDatabaseBackedState()
+  .then(() => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Swyft Ops V5 Postgres server running on port ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error("Failed to initialize database-backed app:", err);
+    process.exit(1);
+  });
