@@ -125,7 +125,7 @@ async function migrate() {
 
   await query(`CREATE TABLE IF NOT EXISTS daily_setup (
   id INTEGER PRIMARY KEY,
-  current_date TEXT,
+  setup_date TEXT,
   crew_size NUMERIC DEFAULT 1,
   lunch_breaks JSONB DEFAULT '[]'::jsonb,
   active_lunch_start TEXT
