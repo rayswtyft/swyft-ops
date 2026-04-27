@@ -1546,8 +1546,9 @@ if (document.activeElement !== $("scheduleCrewSize")) {
 }
 
 
-      $("serviceDate").value = dailySetup.date || "";
-
+if (document.activeElement !== $("serviceDate")) {
+  $("serviceDate").value = dailySetup.date || "";
+}
       $("lunchMeta").innerText = `Lunch today: ${Number(dailySetup.lunchMinutes || 0).toFixed(2)} min • Active: ${dailySetup.activeLunchStart ? "Yes" : "No"}`;
 
     }
