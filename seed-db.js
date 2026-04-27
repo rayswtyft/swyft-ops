@@ -230,7 +230,7 @@ async function seed() {
     }
 
     await client.query(
-      `INSERT INTO daily_setup (id, current_date, crew_size, lunch_breaks, active_lunch_start)
+      `INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start)
        VALUES (1,$1,$2,$3,$4)`,
       [
         db.dailySetup.date || todayString(),
