@@ -1150,7 +1150,7 @@
 
     const MANAGER_PIN = "12124512";
 
-    const AUTO_REFRESH_MS = 3500;
+    const AUTO_REFRESH_MS = 30000;
 
 
 
@@ -3422,21 +3422,25 @@
 
 
 
-    async function toggleChecklist(date,item,checked){
+   async function toggleChecklist(item, checked) {
 
-      await fetch("/daily-checklist/toggle", {
+  // ✅ update UI instantly
+  const el = event.target.closest(".check-item");
+  if (checked) el.classList.add("checked");
+  else el.classList.remove("checked");
 
-        method:"POST",
+  // ✅ send to server in background
+  fetch("/daily-checklist/toggle", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item, checked })
+  }).catch(() => {
+    // rollback if fails
+    if (checked) el.classList.remove("checked");
+    else el.classList.add("checked");
+  });
+}
 
-        headers:{ "Content-Type":"application/json" },
-
-        body: JSON.stringify({ date, item, checked })
-
-      });
-
-      await loadChecklist();
-
-    }
 
 
 
@@ -3467,8 +3471,25 @@
     }
 
 
+async function saveCrewSize() {
+  const crewSize = Number($("managerCrewSize").value || 1);
 
-    async function saveCrewSize(){
+  // instant local update
+  dailySetup.crewSize = crewSize;
+  $("scheduleCrewSize").value = crewSize;
+  $("syncStatus").innerText = "Crew size saved";
+
+  fetch("/daily-setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: dailySetup.date || $("dailyDate").value,
+      crewSize
+    })
+  }).catch(() => {
+    $("syncStatus").innerText = "Crew size save failed";
+  });
+}
 
       await fetch("/daily-setup", {
 
@@ -3494,8 +3515,24 @@
 
 
 
-    async function saveScheduleCrew(){
+async function saveScheduleCrew() {
+  const crewSize = Number($("scheduleCrewSize").value || 1);
 
+  dailySetup.crewSize = crewSize;
+  $("managerCrewSize").value = crewSize;
+  $("syncStatus").innerText = "Crew size saved";
+
+  fetch("/daily-setup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: dailySetup.date || $("scheduleDate").value,
+      crewSize
+    })
+  }).catch(() => {
+    $("syncStatus").innerText = "Crew size save failed";
+  });
+}
       await fetch("/daily-setup", {
 
         method:"POST",
