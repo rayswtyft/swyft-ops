@@ -1168,8 +1168,7 @@ if (!Array.isArray(db.jobs)) db.jobs = [];
   db.dailySetup.date = cleanString(req.body.date) || todayString();
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
   // Update all unfinished jobs for that day
-for (const job of db.jobs || []) {
-  // Update all unfinished jobs for that day
+// Update all unfinished jobs for that day
 if (Array.isArray(db.jobs)) {
   for (const job of db.jobs) {
     if (job.serviceDate === db.dailySetup.date) {
