@@ -1162,34 +1162,31 @@ app.get("/daily-setup", (_req, res) => {
 
 app.post("/daily-setup", (req, res) => {
   let db = readDb();
-if (!db) db = {};
-if (!db.dailySetup) db.dailySetup = {};
-if (!Array.isArray(db.jobs)) db.jobs = [];
+  if (!db) db = {};
+  if (!db.dailySetup) db.dailySetup = {};
+  if (!Array.isArray(db.jobs)) db.jobs = [];
+
   db.dailySetup.date = cleanString(req.body.date) || todayString();
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
+
   // Update all unfinished jobs for that day
-// Update all unfinished jobs for that day
-if (Array.isArray(db.jobs)) {
   for (const job of db.jobs) {
-    if (job.serviceDate === db.dailySetup.date) {
-      if (Array.isArray(job.services)) {
-        for (const service of job.services) {
-          if (!service.endTime) {
-            service.crewSize = db.dailySetup.crewSize;
-          }
+    if (job.serviceDate === db.dailySetup.date && Array.isArray(job.services)) {
+      for (const service of job.services) {
+        if (!service.endTime) {
+          service.crewSize = db.dailySetup.crewSize;
         }
       }
     }
   }
-}
-writeDb(db, "daily_setup_updated", {});
+
+  writeDb(db, "daily_setup_updated", {});
 
   res.json({
     ...db.dailySetup,
     lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
   });
 });
-
 app.post("/daily-lunch-start", (_req, res) => {
   const db = readDb();
   if (db.dailySetup.activeLunchStart) {
