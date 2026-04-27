@@ -296,7 +296,13 @@ async function migrateDatabase() {
   await query(`CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, item_key TEXT UNIQUE, name TEXT, quantity NUMERIC, unit TEXT, reorder_point NUMERIC, active BOOLEAN DEFAULT true, display JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN DEFAULT true, created_at TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS daily_setup (id INTEGER PRIMARY KEY, current_date TEXT, crew_size NUMERIC DEFAULT 1, lunch_breaks JSONB DEFAULT '[]'::jsonb, active_lunch_start TEXT)`);
+await query(`
+  CREATE TABLE IF NOT EXISTS daily_setup (
+    id SERIAL PRIMARY KEY,
+    setup_date TEXT,
+    crew_size INTEGER
+  )
+`);
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
