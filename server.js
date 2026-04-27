@@ -1183,7 +1183,7 @@ if (Array.isArray(db.jobs)) {
     }
   }
 }
-  writeDb(db, "daily_setup_updated");
+writeDb(db, "daily_setup_updated", {});
 
   res.json({
     ...db.dailySetup,
