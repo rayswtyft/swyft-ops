@@ -391,6 +391,20 @@
     .inventory-topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 
 
+
+    .van-job-address{
+      font-size:32px;
+      font-weight:900;
+      line-height:1.1;
+      margin-bottom:6px;
+    }
+    .van-job-type{
+      font-size:20px;
+      font-weight:800;
+      color:var(--muted);
+      margin-bottom:8px;
+    }
+
     .timeclock-row{
       border:1px solid var(--line);
       border-radius:14px;
@@ -626,7 +640,7 @@
 
           <div class="muted">Clock employees in and out from the field.</div>
 
-          <input id="employeeClockName" placeholder="Employee name" />
+          <select id="employeeClockSelect"></select>
 
           <div class="row" style="margin-top:10px;">
 
@@ -656,11 +670,13 @@
 
           <input id="managerCrewSize" type="number" min="1" placeholder="Crew size" />
 
+          <button class="green" style="margin-top:10px;" onclick="saveCrewSize()">Save Crew Size</button>
+
           <div class="quick-actions" style="margin-top:10px;">
 
-            <button class="green" onclick="saveCrewSize()">Save Crew Size</button>
-
             <button class="blue" onclick="openFinishDayModal()">Finish Day</button>
+
+            <button class="secondary" onclick="openEmployeeTimeClockModal()">Employee Time Clock Report</button>
 
           </div>
 
@@ -672,13 +688,7 @@
 
           </div>
 
-          <div class="quick-actions" style="margin-top:10px;">
 
-            <button class="secondary" onclick="openEmployeeTimeClockModal()">Employee Time Clock Report</button>
-
-            <div></div>
-
-          </div>
 
           <div id="qbStatusLine" class="right-note"></div>
 
@@ -728,7 +738,10 @@
 
             <input id="scheduleDate" type="date" />
 
-            <input id="scheduleCrewSize" type="number" min="1" placeholder="Crew size for scheduled jobs" />
+            <div>
+              <input id="scheduleCrewSize" type="number" min="1" placeholder="Crew size for scheduled jobs" />
+              <button class="green" style="margin-top:10px;" onclick="saveScheduleCrew()">Save Scheduling Crew Size</button>
+            </div>
 
           </div>
 
@@ -752,7 +765,7 @@
 
             <button class="secondary" onclick="openHistoryModal()">Archive / History</button>
 
-            <button class="green" onclick="saveScheduleCrew()">Save Scheduling Crew Size</button>
+            <div></div>
 
           </div>
 
@@ -1124,6 +1137,15 @@
 
       </div>
 
+      <div class="service-card">
+        <h3>Employees</h3>
+        <div class="row">
+          <input id="newEmployeeName" placeholder="Employee name" />
+          <button class="green" onclick="addEmployee()">Add Employee</button>
+        </div>
+        <div id="employeeEditorList"></div>
+      </div>
+
       <div id="employeeClockReportBody"></div>
 
     </div>
@@ -1195,6 +1217,7 @@
     let quickbooksConnected = false;
 
     let employeeClockRecords = [];
+    let employees = [];
 
 
 
@@ -1446,6 +1469,9 @@
 
         await loadContractors();
 
+        await loadEmployees();
+        await loadEmployeeClockRecords();
+
         await loadJobs();
 
         await loadChecklist();
@@ -1515,8 +1541,6 @@
         : configured ? "QuickBooks configured, not connected" : "QuickBooks not configured/connected";
 
       $("inventoryEditBtn").innerText = inventoryEditMode ? "Cancel Edit" : "Edit Inventory";
-
-      loadEmployeeClockRecords();
 
       renderEmployeeClockStatus();
 
@@ -2666,9 +2690,13 @@ if (document.activeElement !== $("serviceDate")) {
 
           <div>
 
-            <h2>${currentMode === "van" ? "Job" : (job.contractor?.companyName || job.contractor?.contactName || "No contractor")}</h2>
-
-            <div>${job.serviceAddress}</div>
+            ${currentMode === "van" ? `
+              <div class="van-job-address">${job.serviceAddress}</div>
+              <div class="van-job-type">${job.services?.[0]?.category || ""}${job.services?.[0]?.subtype ? " — " + job.services[0].subtype : ""}</div>
+            ` : `
+              <h2>${job.contractor?.companyName || job.contractor?.contactName || "No contractor"}</h2>
+              <div>${job.serviceAddress}</div>
+            `}
 
             <div class="muted">Date: ${job.serviceDate}</div>
 
@@ -2912,9 +2940,13 @@ if (document.activeElement !== $("serviceDate")) {
 
             <div class="van-picture-buttons">
 
-              <button class="blue" onclick="captureVanPhoto(${job.id}, 'before')">Before Picture</button>
+              <button class="blue" onclick="captureVanPhoto(${job.id}, 'before')">Take Before Picture</button>
 
-              <button class="green" onclick="captureVanPhoto(${job.id}, 'after')">After Picture</button>
+              <button class="secondary" onclick="uploadVanPhoto(${job.id}, 'before')">Upload Before Picture</button>
+
+              <button class="green" onclick="captureVanPhoto(${job.id}, 'after')">Take After Picture</button>
+
+              <button class="secondary" onclick="uploadVanPhoto(${job.id}, 'after')">Upload After Picture</button>
 
             </div>
 
@@ -3307,6 +3339,46 @@ if (document.activeElement !== $("serviceDate")) {
       input.accept = "image/*";
 
       input.setAttribute("capture", "environment");
+
+      input.onchange = async () => {
+
+        const file = input.files?.[0];
+
+        if (!file) return;
+
+        const fd = new FormData();
+
+        fd.append("photo", file);
+
+        fd.append("tag", tag);
+
+        fd.append("caption", "");
+
+        await fetch(`/jobs/${jobId}/photos`, {
+
+          method:"POST",
+
+          body: fd
+
+        });
+
+        await refreshAll(true);
+
+      };
+
+      input.click();
+
+    }
+
+
+
+    function uploadVanPhoto(jobId, tag){
+
+      const input = document.createElement("input");
+
+      input.type = "file";
+
+      input.accept = "image/*";
 
       input.onchange = async () => {
 
@@ -3760,33 +3832,61 @@ async function saveScheduleCrew() {
 
 
 
-    function loadEmployeeClockRecords(){
+    async function loadEmployees(){
 
       try {
-
-        employeeClockRecords = JSON.parse(localStorage.getItem("swyftEmployeeClockRecords") || "[]");
-
+        const res = await fetch("/employees");
+        employees = await res.json();
       } catch {
+        employees = [];
+      }
 
-        employeeClockRecords = [];
+      renderEmployeeDropdown();
+      renderEmployeeEditorList();
 
+    }
+
+
+
+    function renderEmployeeDropdown(){
+
+      const select = $("employeeClockSelect");
+
+      if (!select) return;
+
+      const oldValue = select.value;
+
+      select.innerHTML = employees.length
+        ? employees.map(e => `<option value="${e.id}">${e.name}</option>`).join("")
+        : `<option value="">No employees yet</option>`;
+
+      if (oldValue && employees.some(e => String(e.id) === String(oldValue))) {
+        select.value = oldValue;
       }
 
     }
 
 
 
-    function saveEmployeeClockRecords(){
+    async function loadEmployeeClockRecords(){
 
-      localStorage.setItem("swyftEmployeeClockRecords", JSON.stringify(employeeClockRecords));
+      try {
+        const date = $("dailyDate")?.value || dailySetup.date || new Date().toISOString().slice(0,10);
+        const res = await fetch(`/time-clock?date=${encodeURIComponent(date)}`);
+        employeeClockRecords = await res.json();
+      } catch {
+        employeeClockRecords = [];
+      }
+
+      renderEmployeeClockStatus();
 
     }
 
 
 
-    function activeEmployeeRecord(name){
+    function activeEmployeeRecord(employeeId){
 
-      return employeeClockRecords.find(r => r.name.toLowerCase() === name.toLowerCase() && !r.clockOut);
+      return employeeClockRecords.find(r => String(r.employeeId) === String(employeeId) && !r.clockOut);
 
     }
 
@@ -3798,13 +3898,11 @@ async function saveScheduleCrew() {
 
       if (!el) return;
 
-      loadEmployeeClockRecords();
-
       const active = employeeClockRecords.filter(r => !r.clockOut);
 
       el.innerHTML = active.length
 
-        ? `Clocked in: ${active.map(r => `${r.name} since ${new Date(r.clockIn).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`).join(" • ")}`
+        ? `Clocked in: ${active.map(r => `${r.employeeName} since ${new Date(r.clockIn).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`).join(" • ")}`
 
         : "No employees currently clocked in.";
 
@@ -3812,65 +3910,58 @@ async function saveScheduleCrew() {
 
 
 
-    function clockInEmployee(){
+    async function clockInEmployee(){
 
-      loadEmployeeClockRecords();
+      const employeeId = $("employeeClockSelect").value;
 
-      const name = $("employeeClockName").value.trim();
+      if (!employeeId) return alert("Choose an employee");
 
-      if (!name) return alert("Enter employee name");
+      try {
+        await fetch("/time-clock/in", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({
+            employeeId,
+            date: $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10)
+          })
+        }).then(async r => {
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || "Clock in failed");
+          return data;
+        });
 
-      if (activeEmployeeRecord(name)) return alert(`${name} is already clocked in`);
-
-      employeeClockRecords.push({
-
-        id: Date.now(),
-
-        name,
-
-        clockIn: new Date().toISOString(),
-
-        clockOut: null,
-
-        date: $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10)
-
-      });
-
-      saveEmployeeClockRecords();
-
-      $("employeeClockName").value = "";
-
-      renderEmployeeClockStatus();
-
-      alert(`${name} clocked in`);
+        await loadEmployeeClockRecords();
+        alert("Employee clocked in");
+      } catch(err) {
+        alert(err.message);
+      }
 
     }
 
 
 
-    function clockOutEmployee(){
+    async function clockOutEmployee(){
 
-      loadEmployeeClockRecords();
+      const employeeId = $("employeeClockSelect").value;
 
-      const name = $("employeeClockName").value.trim();
+      if (!employeeId) return alert("Choose an employee");
 
-      if (!name) return alert("Enter employee name");
+      try {
+        const entry = await fetch("/time-clock/out", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ employeeId })
+        }).then(async r => {
+          const data = await r.json();
+          if (!r.ok) throw new Error(data.error || "Clock out failed");
+          return data;
+        });
 
-      const record = activeEmployeeRecord(name);
-
-      if (!record) return alert(`${name} is not currently clocked in`);
-
-      record.clockOut = new Date().toISOString();
-
-      record.minutes = Math.round((new Date(record.clockOut) - new Date(record.clockIn)) / 60000);
-
-      saveEmployeeClockRecords();
-
-      $("employeeClockName").value = "";
-
-      renderEmployeeClockStatus();
-
-      alert(`${name} clocked out • ${record.minutes} minutes`);
+        await loadEmployeeClockRecords();
+        alert(`${entry.employeeName} clocked out • ${entry.minutes} minutes`);
+      } catch(err) {
+        alert(err.message);
+      }
 
     }
 
@@ -3878,9 +3969,9 @@ async function saveScheduleCrew() {
 
     function openEmployeeTimeClockModal(){
 
-      loadEmployeeClockRecords();
-
       $("timeClockFilterDate").value = $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10);
+
+      renderEmployeeEditorList();
 
       renderEmployeeTimeClockReport();
 
@@ -3898,13 +3989,17 @@ async function saveScheduleCrew() {
 
 
 
-    function renderEmployeeTimeClockReport(){
-
-      loadEmployeeClockRecords();
+    async function renderEmployeeTimeClockReport(){
 
       const date = $("timeClockFilterDate").value;
+      try {
+        const res = await fetch(`/time-clock?date=${encodeURIComponent(date || "")}`);
+        employeeClockRecords = await res.json();
+      } catch {
+        employeeClockRecords = [];
+      }
 
-      const rows = employeeClockRecords.filter(r => !date || r.date === date);
+      const rows = employeeClockRecords;
 
       const totalMinutes = rows.reduce((sum, r) => sum + (r.clockOut ? Math.round((new Date(r.clockOut) - new Date(r.clockIn)) / 60000) : 0), 0);
 
@@ -3922,7 +4017,7 @@ async function saveScheduleCrew() {
 
           <div class="timeclock-row ${!r.clockOut ? "timeclock-active" : ""}">
 
-            <strong>${r.name}</strong>
+            <strong>${r.employeeName}</strong>
 
             <div class="muted">Clock in: ${new Date(r.clockIn).toLocaleString()}</div>
 
@@ -3935,6 +4030,75 @@ async function saveScheduleCrew() {
         `).join("") : `<div class="muted">No time clock records for this date.</div>`}
 
       `;
+
+    }
+
+
+
+    function renderEmployeeEditorList(){
+
+      const el = $("employeeEditorList");
+      if (!el) return;
+
+      el.innerHTML = employees.length ? employees.map(e => `
+        <div class="timeclock-row">
+          <strong>${e.name}</strong>
+          <div class="row" style="margin-top:8px;">
+            <input id="employee-edit-${e.id}" value="${e.name}" />
+            <button class="green" onclick="saveEmployee(${e.id})">Save</button>
+          </div>
+          <button class="red" style="margin-top:8px;" onclick="deleteEmployee(${e.id})">Remove Employee</button>
+        </div>
+      `).join("") : `<div class="muted">No employees yet.</div>`;
+
+    }
+
+
+
+    async function addEmployee(){
+
+      const name = $("newEmployeeName").value.trim();
+      if (!name) return alert("Enter employee name");
+
+      const res = await fetch("/employees", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ name })
+      });
+
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+
+      $("newEmployeeName").value = "";
+      await loadEmployees();
+
+    }
+
+
+
+    async function saveEmployee(id){
+
+      const name = $(`employee-edit-${id}`).value.trim();
+      if (!name) return alert("Enter employee name");
+
+      await fetch(`/employees/${id}`, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ name, active:true })
+      });
+
+      await loadEmployees();
+
+    }
+
+
+
+    async function deleteEmployee(id){
+
+      if (!confirm("Remove this employee?")) return;
+
+      await fetch(`/employees/${id}`, { method:"DELETE" });
+      await loadEmployees();
 
     }
 
@@ -3958,8 +4122,6 @@ async function saveScheduleCrew() {
       renderServices();
 
       renderEstimateServices();
-
-      loadEmployeeClockRecords();
 
       renderEmployeeClockStatus();
 
