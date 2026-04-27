@@ -625,7 +625,7 @@ function normalizeService(raw = {}, defaultCrewSize = 1) {
   const s = {
     category: raw.category || "Cleaning",
     subtype: raw.subtype || "General cleaning",
-    crewSize: Number(raw.crewSize || defaultCrewSize || 1),
+    crewSize: Number(raw.crewSize ?? defaultCrewSize ?? 1),
     hoursManual: Number(raw.hoursManual || 0),
     linearFeet: Number(raw.linearFeet || 0),
     junkLoad: raw.junkLoad || "Quarter load",
