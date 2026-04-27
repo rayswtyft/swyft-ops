@@ -1166,10 +1166,16 @@ app.post("/daily-setup", (req, res) => {
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
   // Update all unfinished jobs for that day
 for (const job of db.jobs || []) {
-  if (job.serviceDate === db.dailySetup.date) {
-    for (const service of job.services || []) {
-      if (!service.endTime) {
-        service.crewSize = db.dailySetup.crewSize;
+  // Update all unfinished jobs for that day
+if (Array.isArray(db.jobs)) {
+  for (const job of db.jobs) {
+    if (job.serviceDate === db.dailySetup.date) {
+      if (Array.isArray(job.services)) {
+        for (const service of job.services) {
+          if (!service.endTime) {
+            service.crewSize = db.dailySetup.crewSize;
+          }
+        }
       }
     }
   }
