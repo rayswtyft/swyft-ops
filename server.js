@@ -1164,6 +1164,16 @@ app.post("/daily-setup", (req, res) => {
   const db = readDb();
   db.dailySetup.date = cleanString(req.body.date) || todayString();
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
+  // Update all unfinished jobs for that day
+for (const job of db.jobs || []) {
+  if (job.serviceDate === db.dailySetup.date) {
+    for (const service of job.services || []) {
+      if (!service.endTime) {
+        service.crewSize = Number(req.body.crewSize || 1);
+      }
+    }
+  }
+}
   writeDb(db, "daily_setup_updated");
 
   res.json({
