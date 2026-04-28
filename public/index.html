@@ -410,6 +410,7 @@
       background:#fff;
       margin-top:10px;
     }
+    .assignment-select{min-height:150px;}
 
 
     .timeclock-row{
@@ -676,6 +677,8 @@
           <input id="managerDateMirror" type="date" disabled />
 
           <input id="managerCrewSize" type="number" min="1" placeholder="Crew size" />
+          <div class="muted" style="margin-top:10px;">Select who is working today. Hold/drag to select multiple if your device supports it.</div>
+          <select id="managerAssignedEmployees" class="assignment-select" multiple></select>
 
           <button class="green" style="margin-top:10px;" onclick="saveCrewSize()">Save Crew Size</button>
 
@@ -753,6 +756,8 @@
 
             <div>
               <input id="scheduleCrewSize" type="number" min="1" placeholder="Crew size for scheduled jobs" />
+              <div class="muted" style="margin-top:10px;">Who is working this schedule date?</div>
+              <select id="scheduleAssignedEmployees" class="assignment-select" multiple></select>
               <button class="green" style="margin-top:10px;" onclick="saveScheduleCrew()">Save Scheduling Crew Size</button>
             </div>
 
@@ -1255,13 +1260,13 @@
 
     const junkOptions = [
 
-      { label: "Quarter load", price: 175 },
+      { label: "Quarter load", price: 250 },
 
-      { label: "Half load", price: 325 },
+      { label: "Half load", price: 500 },
 
-      { label: "3/4 load", price: 475 },
+      { label: "3/4 load", price: 750 },
 
-      { label: "Full load", price: 550 }
+      { label: "Full load", price: 1000 }
 
     ];
 
@@ -1572,8 +1577,8 @@
       $("inventoryEditBtn").innerText = inventoryEditMode ? "Cancel Edit" : "Edit Inventory";
 
       await loadEmployees();
-
-      await loadEmployees().then(loadEmployeeClockRecords).then(renderEmployeeClockStatus);
+      await loadEmployeeClockRecords();
+      renderEmployeeClockStatus();
 
     }
 
@@ -1605,6 +1610,8 @@ if (document.activeElement !== $("serviceDate")) {
   $("serviceDate").value = dailySetup.date || "";
 }
       $("lunchMeta").innerText = `Lunch today: ${Number(dailySetup.lunchMinutes || 0).toFixed(2)} min • Active: ${dailySetup.activeLunchStart ? "Yes" : "No"}`;
+      renderAssignedEmployeePickers();
+      renderEmployeeDropdown();
 
     }
 
@@ -3169,9 +3176,30 @@ if (document.activeElement !== $("serviceDate")) {
 
 
 
+    function getBrowserGeo(){
+      return new Promise(resolve => {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          pos => resolve({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            capturedAt: new Date().toISOString()
+          }),
+          () => resolve(null),
+          { enableHighAccuracy:true, timeout:7000, maximumAge:30000 }
+        );
+      });
+    }
+
     async function serviceAction(url){
 
-      const res = await fetch(url, { method:"POST" });
+      const geo = await getBrowserGeo();
+      const res = await fetch(url, {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ geo })
+      });
 
       const data = await res.json();
 
@@ -3261,7 +3289,7 @@ if (document.activeElement !== $("serviceDate")) {
 
         headers:{ "Content-Type":"application/json" },
 
-        body: JSON.stringify({ materialsUsed:{} })
+        body: JSON.stringify({ materialsUsed:{}, geo: await getBrowserGeo() })
 
       });
 
@@ -3293,7 +3321,7 @@ if (document.activeElement !== $("serviceDate")) {
 
         headers:{ "Content-Type":"application/json" },
 
-        body: JSON.stringify({ materialsUsed: payload })
+        body: JSON.stringify({ materialsUsed: payload, geo: await getBrowserGeo() })
 
       });
 
@@ -3574,7 +3602,8 @@ async function saveCrewSize() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       date: dailySetup.date || $("dailyDate").value,
-      crewSize
+      crewSize,
+      assignedEmployeeIds: selectedAssignedEmployeeIds("managerAssignedEmployees", crewSize)
     })
   }).catch(() => {
     $("syncStatus").innerText = "Crew size save failed";
@@ -3593,7 +3622,8 @@ async function saveScheduleCrew() {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       date: dailySetup.date || $("scheduleDate").value,
-      crewSize
+      crewSize,
+      assignedEmployeeIds: selectedAssignedEmployeeIds("scheduleAssignedEmployees", crewSize)
     })
   }).catch(() => {
     $("syncStatus").innerText = "Crew size save failed";
@@ -3846,6 +3876,25 @@ async function saveScheduleCrew() {
 
 
 
+
+    function selectedAssignedEmployeeIds(selectId, crewSize){
+      const select = $(selectId);
+      if (!select) return dailySetup.assignedEmployeeIds || [];
+      const values = Array.from(select.selectedOptions || []).map(o => String(o.value)).filter(Boolean);
+      return values.slice(0, Number(crewSize || values.length || 1));
+    }
+
+    function renderAssignedEmployeePickers(){
+      const assigned = (dailySetup.assignedEmployeeIds || []).map(String);
+      ["managerAssignedEmployees", "scheduleAssignedEmployees"].forEach(id => {
+        const select = $(id);
+        if (!select) return;
+        select.innerHTML = employees.length
+          ? employees.map(e => `<option value="${e.id}" ${assigned.includes(String(e.id)) ? "selected" : ""}>${e.name}</option>`).join("")
+          : `<option value="">No employees yet</option>`;
+      });
+    }
+
     async function loadEmployees(){
       try {
         const res = await fetch("/employees");
@@ -3853,6 +3902,7 @@ async function saveScheduleCrew() {
       } catch {
         employees = [];
       }
+      renderAssignedEmployeePickers();
       renderEmployeeDropdown();
     }
 
@@ -3860,10 +3910,12 @@ async function saveScheduleCrew() {
       const select = $("employeeClockEmployee");
       if (!select) return;
       const current = select.value;
-      select.innerHTML = employees.length
-        ? employees.map(e => `<option value="${e.id}">${e.name}</option>`).join("")
-        : `<option value="">No employees yet</option>`;
-      if (current && employees.some(e => String(e.id) === String(current))) {
+      const assigned = (dailySetup.assignedEmployeeIds || []).map(String);
+      const list = assigned.length ? employees.filter(e => assigned.includes(String(e.id))) : employees;
+      select.innerHTML = list.length
+        ? list.map(e => `<option value="${e.id}">${e.name}</option>`).join("")
+        : `<option value="">No assigned employees</option>`;
+      if (current && list.some(e => String(e.id) === String(current))) {
         select.value = current;
       }
     }
@@ -3903,7 +3955,8 @@ async function saveScheduleCrew() {
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({
           employeeId,
-          date: $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10)
+          date: $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10),
+          geo: await getBrowserGeo()
         })
       });
       const data = await res.json();
@@ -3921,7 +3974,7 @@ async function saveScheduleCrew() {
       const res = await fetch("/time-clock/clock-out", {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ employeeId })
+        body: JSON.stringify({ employeeId, geo: await getBrowserGeo() })
       });
       const data = await res.json();
       if (data.error) return alert(data.error);
@@ -4038,8 +4091,8 @@ async function saveScheduleCrew() {
       renderEstimateServices();
 
       await loadEmployees();
-
-      await loadEmployees().then(loadEmployeeClockRecords).then(renderEmployeeClockStatus);
+      await loadEmployeeClockRecords();
+      renderEmployeeClockStatus();
 
 
 
