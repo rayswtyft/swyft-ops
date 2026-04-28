@@ -97,7 +97,7 @@ async function seed() {
       "daily_checklist_state",
       "daily_setup",
       "settings",
-      "quickbooks_tokens"
+      "quickbooks_tokens","route_events","recurring_jobs","checklist_templates","inventory_purchases"
     ];
 
     for (const table of tables) await client.query(`DELETE FROM ${table}`);
@@ -193,4 +193,4 @@ async function seed() {
 seed().catch(err => {
   console.error("Seed failed:", err);
   process.exit(1);
-}
+});
