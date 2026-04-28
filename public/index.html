@@ -422,6 +422,12 @@
     }
     .timeclock-active{border-color:#bbf7d0;background:#f0fdf4}
 
+    .map-box{height:360px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#f8fafc;}
+    .mobile-stack{display:grid;gap:10px;}
+    .checklist-collapsed #dailyChecklist{display:none;}
+    .directions-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+    @media (max-width:600px){h1{font-size:24px}.van-address-big{font-size:24px}.dashboard{grid-template-columns:1fr 1fr}.layout{gap:10px}.card{border-radius:14px}.quick-actions{gap:8px}.mode-btn{font-size:16px;min-height:56px}}
+
     @media (max-width:1200px){
 
       .dashboard{grid-template-columns:repeat(3,1fr)}
@@ -634,7 +640,7 @@
 
         <div class="card">
 
-          <h2>Daily Checklist</h2>
+          <div class="topbar"><h2>Daily Checklist</h2><button class="secondary" style="width:auto;" onclick="toggleDailyChecklistView()">View Checklist</button></div>
 
           <div id="checkMeta" class="muted">Loading checklist…</div>
 
@@ -704,6 +710,16 @@
 
             <button class="secondary" onclick="openEmployeeManagerModal()">Edit Employees</button>
 
+          </div>
+
+          <div class="quick-actions" style="margin-top:10px;">
+            <button class="secondary" onclick="openRouteHistoryModal()">View Route History</button>
+            <button class="secondary" onclick="openChecklistEditorModal()">Edit Checklist</button>
+          </div>
+
+          <div class="quick-actions" style="margin-top:10px;">
+            <button class="secondary" onclick="openInventoryUsageModal()">Inventory Usage Reports</button>
+            <button class="secondary" onclick="refreshQuickBooksToken()">Refresh QuickBooks Token</button>
           </div>
 
           <div id="qbStatusLine" class="right-note"></div>
@@ -1190,6 +1206,65 @@
 
   </div>
 
+
+
+
+  <div id="directionsModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="topbar">
+        <h2>Directions</h2>
+        <button class="secondary" style="width:auto;" onclick="closeDirectionsModal()">Close</button>
+      </div>
+      <div id="directionsMap" class="map-box"></div>
+      <div class="directions-actions">
+        <button class="secondary" onclick="openDirectionsExternal()">Open in Google Maps</button>
+        <button class="blue" onclick="closeDirectionsModal()">Done</button>
+      </div>
+      <div id="directionsStatus" class="right-note"></div>
+    </div>
+  </div>
+
+  <div id="routeHistoryModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="topbar">
+        <h2>GPS Route History</h2>
+        <button class="secondary" style="width:auto;" onclick="closeRouteHistoryModal()">Close</button>
+      </div>
+      <div class="row">
+        <input id="routeHistoryDate" type="date" />
+        <select id="routeHistoryEmployee"><option value="">All employees</option></select>
+      </div>
+      <button class="blue" style="margin-top:10px;" onclick="loadRouteHistoryMap()">Load Route History</button>
+      <div id="routeHistoryMap" class="map-box" style="margin-top:12px;"></div>
+      <div id="routeHistoryList"></div>
+    </div>
+  </div>
+
+  <div id="checklistEditorModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="topbar">
+        <h2>Edit Checklist</h2>
+        <button class="secondary" style="width:auto;" onclick="closeChecklistEditorModal()">Close</button>
+      </div>
+      <select id="checklistServiceKey"></select>
+      <textarea id="checklistItemsEditor" placeholder="One checklist item per line"></textarea>
+      <button class="green" onclick="saveChecklistTemplate()">Save Checklist</button>
+    </div>
+  </div>
+
+  <div id="inventoryUsageModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="topbar">
+        <h2>Inventory Usage Reports</h2>
+        <button class="secondary" style="width:auto;" onclick="closeInventoryUsageModal()">Close</button>
+      </div>
+      <div class="row">
+        <button class="secondary" onclick="loadInventoryUsage('biweekly')">Biweekly Report</button>
+        <button class="secondary" onclick="loadInventoryUsage('monthly')">Monthly Report</button>
+      </div>
+      <div id="inventoryUsageBody"></div>
+    </div>
+  </div>
 
   <div id="photoModal" class="modal hidden" onclick="closePhotoModal()">
 
@@ -2731,6 +2806,10 @@ if (document.activeElement !== $("serviceDate")) {
             ${currentMode === "van" ? `
               <div class="van-address-big">${job.serviceAddress}</div>
               <div class="van-job-type">${job.services?.[0]?.category || ""}${job.services?.[0]?.subtype ? " — " + job.services[0].subtype : ""}</div>
+              <div class="quick-actions" style="margin-top:10px;">
+                <button class="blue" onclick="openDirectionsModalFromSelectedJob()">Directions</button>
+                <button class="secondary" onclick="window.open('https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(jobs.find(j => j.id === selectedJobId)?.serviceAddress || ''), '_blank')">Open Maps</button>
+              </div>
             ` : `
               <h2>${job.contractor?.companyName || job.contractor?.contactName || "No contractor"}</h2>
               <div>${job.serviceAddress}</div>
@@ -2776,6 +2855,10 @@ if (document.activeElement !== $("serviceDate")) {
 
             <button class="red" onclick="deleteJob(${job.id})">Delete Job</button>
 
+          </div>
+          <div class="quick-actions" style="margin-top:10px;">
+            <button class="secondary" onclick="continueJobTomorrow(${job.id})">Continue Tomorrow</button>
+            <button class="secondary" onclick="createRecurringFromJob(${job.id})">Make Recurring</button>
           </div>
 
         ` : ""}
@@ -4133,6 +4216,177 @@ async function saveScheduleCrew() {
 
 
     init();
+
+  
+
+    let googleMapsApiKey = "";
+    let googleMapsLoaded = false;
+    let currentDirectionsAddress = "";
+    let directionsMap, directionsService, directionsRenderer, routeHistoryMap;
+
+    async function loadGoogleMapsIfNeeded(){
+      if (googleMapsLoaded && window.google?.maps) return true;
+      if (!googleMapsApiKey) {
+        try {
+          const res = await fetch('/maps/config');
+          const data = await res.json();
+          googleMapsApiKey = data.apiKey || "";
+        } catch (_) {}
+      }
+      if (!googleMapsApiKey) return false;
+      return new Promise(resolve => {
+        if (window.google?.maps) { googleMapsLoaded = true; return resolve(true); }
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => { googleMapsLoaded = true; initAddressAutocomplete(); resolve(true); };
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+      });
+    }
+
+    async function initAddressAutocomplete(){
+      if (!window.google?.maps?.places) return;
+      ['serviceAddress','estimateAddress','editAddress'].forEach(id => {
+        const input = $(id);
+        if (!input || input.dataset.autocompleteAttached) return;
+        input.dataset.autocompleteAttached = '1';
+        const ac = new google.maps.places.Autocomplete(input, { fields:['formatted_address','geometry','place_id'] });
+        ac.addListener('place_changed', () => {
+          const place = ac.getPlace();
+          if (place?.formatted_address) input.value = place.formatted_address;
+        });
+      });
+    }
+
+    function openDirectionsModalFromSelectedJob(){
+      const job = jobs.find(j => j.id === selectedJobId);
+      if (!job) return alert('Select a job first');
+      openDirectionsModal(job.serviceAddress || '');
+    }
+
+    async function openDirectionsModal(address){
+      currentDirectionsAddress = address;
+      $('directionsModal').classList.remove('hidden');
+      $('directionsStatus').innerText = 'Loading directions...';
+      const ok = await loadGoogleMapsIfNeeded();
+      if (!ok) { $('directionsStatus').innerText = 'Google Maps API key missing or map failed to load.'; return; }
+      const geo = await getBrowserGeo();
+      const mapEl = $('directionsMap');
+      directionsMap = new google.maps.Map(mapEl, { zoom: 12, center: { lat: 40.0583, lng: -74.4057 } });
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ map: directionsMap });
+      if (!geo) { $('directionsStatus').innerText = 'Could not access current location. Use Open in Google Maps.'; return; }
+      directionsService.route({
+        origin: { lat: geo.latitude, lng: geo.longitude },
+        destination: address,
+        travelMode: google.maps.TravelMode.DRIVING
+      }, (result, status) => {
+        if (status === 'OK') { directionsRenderer.setDirections(result); $('directionsStatus').innerText = address; }
+        else $('directionsStatus').innerText = 'Could not draw route. Use Open in Google Maps.';
+      });
+    }
+
+    function closeDirectionsModal(){ $('directionsModal').classList.add('hidden'); }
+    function openDirectionsExternal(){
+      const destination = encodeURIComponent(currentDirectionsAddress || '');
+      window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}`, '_blank');
+    }
+
+    async function openRouteHistoryModal(){
+      $('routeHistoryModal').classList.remove('hidden');
+      $('routeHistoryDate').value = dailySetup.date || new Date().toISOString().slice(0,10);
+      const sel = $('routeHistoryEmployee');
+      sel.innerHTML = `<option value="">All employees</option>` + employees.filter(e => e.active !== false).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+      await loadRouteHistoryMap();
+    }
+    function closeRouteHistoryModal(){ $('routeHistoryModal').classList.add('hidden'); }
+
+    async function loadRouteHistoryMap(){
+      const ok = await loadGoogleMapsIfNeeded();
+      const date = $('routeHistoryDate').value || dailySetup.date;
+      const emp = $('routeHistoryEmployee').value;
+      const res = await fetch(`/route-history?date=${encodeURIComponent(date)}${emp ? '&employeeId=' + encodeURIComponent(emp) : ''}`);
+      const events = await res.json();
+      $('routeHistoryList').innerHTML = events.map(e => `<div class="history-row"><b>${e.action}</b> ${e.createdAt ? new Date(e.createdAt).toLocaleString() : ''}<br><span class="muted">${e.address || e.geo?.formattedAddress || ''}</span></div>`).join('') || '<div class="muted">No route events found.</div>';
+      if (!ok) return;
+      const points = events.filter(e => e.geo && !isNaN(Number(e.geo.latitude)) && !isNaN(Number(e.geo.longitude))).map(e => ({ lat:Number(e.geo.latitude), lng:Number(e.geo.longitude), label:e.action }));
+      const center = points[0] || { lat:40.0583, lng:-74.4057 };
+      routeHistoryMap = new google.maps.Map($('routeHistoryMap'), { zoom: points.length ? 12 : 8, center });
+      points.forEach(p => new google.maps.Marker({ position:p, map:routeHistoryMap, title:p.label }));
+      if (points.length > 1) new google.maps.Polyline({ path:points, geodesic:true, strokeOpacity:1, strokeWeight:3, map:routeHistoryMap });
+    }
+
+    async function continueJobTomorrow(id){
+      const job = jobs.find(j => String(j.id) === String(id));
+      const nextDate = prompt('Continue job on what date?', job?.serviceDate || dailySetup.date);
+      if (!nextDate) return;
+      const res = await fetch(`/jobs/${id}/continue`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ serviceDate: nextDate }) });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      await refreshAll(true);
+      selectedJobId = data.id;
+      renderSelectedJob();
+    }
+
+    async function createRecurringFromJob(id){
+      const job = jobs.find(j => String(j.id) === String(id));
+      if (!job) return;
+      const type = prompt('Recurring type: weekly, biweekly, monthly', 'weekly');
+      if (!type) return;
+      const res = await fetch('/recurring-jobs', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ contractorId: job.contractorId, serviceAddress: job.serviceAddress, notes: job.notes, services: job.services, startDate: job.serviceDate, rule:{ type } }) });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      alert('Recurring job saved.');
+    }
+
+    async function openChecklistEditorModal(){
+      $('checklistEditorModal').classList.remove('hidden');
+      const keys = [];
+      Object.keys(serviceOptions || {}).forEach(cat => (serviceOptions[cat] || []).forEach(sub => keys.push(`${cat}|${sub}`)));
+      $('checklistServiceKey').innerHTML = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+      await loadChecklistTemplateIntoEditor();
+      $('checklistServiceKey').onchange = loadChecklistTemplateIntoEditor;
+    }
+    function closeChecklistEditorModal(){ $('checklistEditorModal').classList.add('hidden'); }
+    async function loadChecklistTemplateIntoEditor(){
+      const res = await fetch('/checklist-templates');
+      const data = await res.json();
+      const key = $('checklistServiceKey').value;
+      $('checklistItemsEditor').value = (data[key] || []).join('\n');
+    }
+    async function saveChecklistTemplate(){
+      const serviceKey = $('checklistServiceKey').value;
+      const items = $('checklistItemsEditor').value.split('\n').map(x => x.trim()).filter(Boolean);
+      const res = await fetch('/checklist-templates', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ serviceKey, items }) });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      alert('Checklist saved');
+    }
+
+    async function openInventoryUsageModal(){ $('inventoryUsageModal').classList.remove('hidden'); await loadInventoryUsage('monthly'); }
+    function closeInventoryUsageModal(){ $('inventoryUsageModal').classList.add('hidden'); }
+    async function loadInventoryUsage(range){
+      const res = await fetch(`/inventory/usage-report?range=${encodeURIComponent(range)}`);
+      const data = await res.json();
+      $('inventoryUsageBody').innerHTML = `<h3>${range} usage</h3>` + (data.rows || []).map(r => `<div class="inventory-row"><b>${r.label}</b><br>Qty: ${r.qty} • Cost: ${fmtMoney(r.total)} • Jobs: ${r.jobs}</div>`).join('') || '<div class="muted">No usage found.</div>';
+    }
+
+    async function refreshQuickBooksToken(){
+      const res = await fetch('/quickbooks/refresh-token', { method:'POST' });
+      const data = await res.json();
+      if (data.error) return alert(data.error);
+      alert('QuickBooks token refreshed/saved.');
+      await loadSettings();
+    }
+
+    // Collapse daily checklist after initial view, but keep it available.
+    function toggleDailyChecklistView(){
+      $('vanTopSection')?.classList.toggle('checklist-collapsed');
+    }
+
+    loadGoogleMapsIfNeeded().then(initAddressAutocomplete);
 
   </script>
 
