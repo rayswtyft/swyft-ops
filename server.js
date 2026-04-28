@@ -23,6 +23,9 @@ const DB_FILE = path.join(__dirname, "db.json");
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const EXPORTS_DIR = path.join(__dirname, "exports");
 
+let memoryDb = null;
+let persistInFlight = Promise.resolve();
+
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(EXPORTS_DIR)) fs.mkdirSync(EXPORTS_DIR, { recursive: true });
@@ -298,11 +301,17 @@ async function migrateDatabase() {
   await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT)`);
 await query(`
   CREATE TABLE IF NOT EXISTS daily_setup (
-    id SERIAL PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
     setup_date TEXT,
-    crew_size INTEGER
+    crew_size INTEGER DEFAULT 1,
+    lunch_breaks JSONB DEFAULT '[]'::jsonb,
+    active_lunch_start TEXT
   )
 `);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS setup_date TEXT`);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS crew_size INTEGER DEFAULT 1`);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS lunch_breaks JSONB DEFAULT '[]'::jsonb`);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
@@ -380,7 +389,13 @@ async function loadDbFromPostgres() {
   const setupRes = await query(`SELECT * FROM daily_setup WHERE id = 1`);
   if (setupRes.rows[0]) {
     const d = setupRes.rows[0];
-    db.dailySetup = { date: d.current_date || todayString(), crewSize: Number(d.crew_size || 1), lunchBreaks: d.lunch_breaks || [], activeLunchStart: d.active_lunch_start || null, dailyChecklistState: {} };
+    db.dailySetup = {
+      date: d.setup_date || todayString(),
+      crewSize: Number(d.crew_size || 1),
+      lunchBreaks: Array.isArray(d.lunch_breaks) ? d.lunch_breaks : [],
+      activeLunchStart: d.active_lunch_start || null,
+      dailyChecklistState: {}
+    };
   }
 
   const checklistRes = await query(`SELECT * FROM daily_checklist_state`);
@@ -451,7 +466,7 @@ async function persistDbToPostgres(db) {
     for (const e of db.employees || []) await client.query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`, [String(e.id), e.name || "Unnamed Employee", e.active !== false, e.createdAt || new Date().toISOString()]);
     for (const t of db.timeClockEntries || []) await client.query(`INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [String(t.id), t.employeeId == null ? null : String(t.employeeId), t.name || t.employeeName || "", t.clockIn || new Date().toISOString(), t.clockOut || null, t.minutes == null ? null : Number(t.minutes), t.date || todayString()]);
 
-    await client.query(`INSERT INTO daily_setup (id, current_date, crew_size, lunch_breaks, active_lunch_start) VALUES (1,$1,$2,$3,$4)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null]);
+    await client.query(`INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start) VALUES (1,$1,$2,$3,$4)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null]);
     for (const [date, state] of Object.entries(db.dailySetup.dailyChecklistState || {})) {
       for (const [item, checked] of Object.entries(state || {})) {
         await client.query(`INSERT INTO daily_checklist_state (check_date, item, checked) VALUES ($1,$2,$3)`, [date, item, !!checked]);
@@ -1161,20 +1176,19 @@ app.get("/daily-setup", (_req, res) => {
 });
 
 app.post("/daily-setup", (req, res) => {
-  let db = readDb();
-  if (!db) db = {};
-  if (!db.dailySetup) db.dailySetup = {};
-  if (!Array.isArray(db.jobs)) db.jobs = [];
-
+  const db = readDb();
+  db.dailySetup ||= {};
   db.dailySetup.date = cleanString(req.body.date) || todayString();
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
+  db.dailySetup.lunchBreaks ||= [];
+  db.dailySetup.dailyChecklistState ||= {};
 
-  // Update all unfinished jobs for that day
-  for (const job of db.jobs) {
-    if (job.serviceDate === db.dailySetup.date && Array.isArray(job.services)) {
-      for (const service of job.services) {
-        if (!service.endTime) {
-          service.crewSize = db.dailySetup.crewSize;
+  // Update all unfinished jobs for that day so crew size applies to both new jobs and unfinished jobs.
+  if (Array.isArray(db.jobs)) {
+    for (const job of db.jobs) {
+      if (job.serviceDate === db.dailySetup.date && Array.isArray(job.services)) {
+        for (const service of job.services) {
+          if (!service.endTime) service.crewSize = db.dailySetup.crewSize;
         }
       }
     }
@@ -1187,6 +1201,7 @@ app.post("/daily-setup", (req, res) => {
     lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
   });
 });
+
 app.post("/daily-lunch-start", (_req, res) => {
   const db = readDb();
   if (db.dailySetup.activeLunchStart) {
