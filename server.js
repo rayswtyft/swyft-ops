@@ -1654,7 +1654,7 @@ app.post("/jobs/:id/services/:index/on-my-way", async (req, res) => {
   service.onMyWayTime = new Date().toISOString();
   const geo = await normalizeGeoWithAddress(req.body.geo);
   storeServiceGeo(service, "onMyWay", geo);
-  recordRouteEvent(db, { action: "onMyWay", jobId: job.id, serviceIndex: index, date: job.serviceDate, geo });
+  recordRouteEvent(db, { action: "onMyWay", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
@@ -1666,7 +1666,7 @@ app.post("/jobs/:id/services/:index/arrived", async (req, res) => {
   service.arrivedTime = new Date().toISOString();
   const geo = await normalizeGeoWithAddress(req.body.geo);
   storeServiceGeo(service, "arrived", geo);
-  recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceIndex: index, date: job.serviceDate, geo });
+  recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
@@ -1683,7 +1683,7 @@ app.post("/jobs/:id/services/:index/start", async (req, res) => {
   service.endTime = null;
   const geo = await normalizeGeoWithAddress(req.body.geo);
   storeServiceGeo(service, "start", geo);
-  recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, date: job.serviceDate, geo });
+  recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
 
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
@@ -1700,7 +1700,7 @@ app.post("/jobs/:id/services/:index/stop", async (req, res) => {
   service.endTime = new Date().toISOString();
   const geo = await normalizeGeoWithAddress(req.body.geo);
   storeServiceGeo(service, "stop", geo);
-  recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, date: job.serviceDate, geo });
+  recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
   service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
 
   deductInventoryForJobIfNeeded(db, job);
