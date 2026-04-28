@@ -79,7 +79,7 @@ const SERVICE_OPTIONS = {
     "Concrete fill without rebar"
   ],
   Labor: ["General labor"],
-  Junk: ["Junk removal"]
+  Junk: ["Junk removal", "Dump truck removal"]
 };
 
 const MATERIAL_DEFS = [
@@ -236,6 +236,12 @@ function normalizeDbShape(db = {}) {
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
+  if (Array.isArray(req.body.assignedEmployeeIds)) {
+    const activeIds = new Set((db.employees || []).filter(e => e.active !== false).map(e => String(e.id)));
+    db.dailySetup.assignedEmployeeIds = req.body.assignedEmployeeIds.map(String).filter(id => activeIds.has(id)).slice(0, db.dailySetup.crewSize);
+  } else {
+    db.dailySetup.assignedEmployeeIds ||= [];
+  }
   db.contractors = db.contractors.map(c => ({ ...c, serviceAddresses: Array.isArray(c.serviceAddresses) ? c.serviceAddresses : [] }));
   db.jobs = db.jobs.map(j => ({
     ...j,
@@ -251,7 +257,7 @@ function normalizeDbShape(db = {}) {
   db.estimates = db.estimates.map(e => ({ ...e, services: Array.isArray(e.services) ? e.services : [], status: e.status || "open" }));
   db.inventory = db.inventory.map(i => ({ ...i, active: i.active !== false }));
   db.employees = db.employees.map(e => ({ id: e.id, name: e.name || e.fullName || "Unnamed Employee", active: e.active !== false, createdAt: e.createdAt || null }));
-  db.timeClockEntries = db.timeClockEntries.map(t => ({ ...t, employeeId: t.employeeId || null, name: t.name || t.employeeName || "", date: t.date || todayString() }));
+  db.timeClockEntries = db.timeClockEntries.map(t => ({ ...t, employeeId: t.employeeId || null, name: t.name || t.employeeName || "", date: t.date || todayString(), clockInGeo: t.clockInGeo || null, clockOutGeo: t.clockOutGeo || null }));
   return db;
 }
 
@@ -284,7 +290,8 @@ function serviceRowToObject(s) {
     startTime: s.start_time || null,
     endTime: s.end_time || null,
     materialsUsed: s.materials_used || {},
-    inventoryDeductedAt: s.inventory_deducted_at || null
+    inventoryDeductedAt: s.inventory_deducted_at || null,
+    actionGeo: s.action_geo || {}
   };
 }
 
@@ -292,26 +299,32 @@ async function migrateDatabase() {
   await query(`CREATE TABLE IF NOT EXISTS contractors (id TEXT PRIMARY KEY, company_name TEXT, contact_name TEXT, email TEXT, phone TEXT, billing_address TEXT, payment_terms TEXT, created_at TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS contractor_addresses (id SERIAL PRIMARY KEY, contractor_id TEXT REFERENCES contractors(id) ON DELETE CASCADE, address TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, service_date TEXT, notes TEXT, created_at TEXT, sort_order INTEGER DEFAULT 0, deleted_at TEXT, archived_at TEXT, finished_at TEXT, quickbooks_status TEXT DEFAULT 'not_sent', quickbooks_invoice_id TEXT, from_estimate_id TEXT, open_status TEXT DEFAULT 'single_day')`);
-  await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS job_photos (id TEXT PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, url TEXT, tag TEXT, caption TEXT, created_at TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS estimates (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, status TEXT DEFAULT 'open', created_at TEXT, converted_job_id TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, item_key TEXT UNIQUE, name TEXT, quantity NUMERIC, unit TEXT, reorder_point NUMERIC, active BOOLEAN DEFAULT true, display JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN DEFAULT true, created_at TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT, clock_in_geo JSONB, clock_out_geo JSONB)`);
 await query(`
   CREATE TABLE IF NOT EXISTS daily_setup (
     id INTEGER PRIMARY KEY,
     setup_date TEXT,
     crew_size INTEGER DEFAULT 1,
     lunch_breaks JSONB DEFAULT '[]'::jsonb,
-    active_lunch_start TEXT
+    active_lunch_start TEXT,
+    assigned_employee_ids JSONB DEFAULT '[]'::jsonb
   )
 `);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS setup_date TEXT`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS crew_size INTEGER DEFAULT 1`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS lunch_breaks JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS assigned_employee_ids JSONB DEFAULT '[]'::jsonb`);
+  await query(`ALTER TABLE job_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
+  await query(`ALTER TABLE estimate_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
+  await query(`ALTER TABLE time_clock_entries ADD COLUMN IF NOT EXISTS clock_in_geo JSONB`);
+  await query(`ALTER TABLE time_clock_entries ADD COLUMN IF NOT EXISTS clock_out_geo JSONB`);
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
@@ -384,7 +397,7 @@ async function loadDbFromPostgres() {
   db.employees = employeesRes.rows.map(e => ({ id: numericIfPossible(e.id), name: e.name, active: e.active !== false, createdAt: e.created_at || null }));
 
   const timeRes = await query(`SELECT * FROM time_clock_entries ORDER BY clock_in DESC`);
-  db.timeClockEntries = timeRes.rows.map(t => ({ id: numericIfPossible(t.id), employeeId: t.employee_id ? numericIfPossible(t.employee_id) : null, name: t.employee_name, clockIn: t.clock_in, clockOut: t.clock_out, minutes: t.minutes === null ? null : Number(t.minutes), date: t.entry_date }));
+  db.timeClockEntries = timeRes.rows.map(t => ({ id: numericIfPossible(t.id), employeeId: t.employee_id ? numericIfPossible(t.employee_id) : null, name: t.employee_name, clockIn: t.clock_in, clockOut: t.clock_out, minutes: t.minutes === null ? null : Number(t.minutes), date: t.entry_date, clockInGeo: t.clock_in_geo || null, clockOutGeo: t.clock_out_geo || null }));
 
   const setupRes = await query(`SELECT * FROM daily_setup WHERE id = 1`);
   if (setupRes.rows[0]) {
@@ -394,7 +407,8 @@ async function loadDbFromPostgres() {
       crewSize: Number(d.crew_size || 1),
       lunchBreaks: Array.isArray(d.lunch_breaks) ? d.lunch_breaks : [],
       activeLunchStart: d.active_lunch_start || null,
-      dailyChecklistState: {}
+      dailyChecklistState: {},
+      assignedEmployeeIds: Array.isArray(d.assigned_employee_ids) ? d.assigned_employee_ids.map(String) : []
     };
   }
 
@@ -428,9 +442,9 @@ async function loadDbFromPostgres() {
 
 async function insertServiceRow(client, table, parentColumn, parentId, s, index) {
   await client.query(
-    `INSERT INTO ${table} (${parentColumn}, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-    [parentId, index, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null]
+    `INSERT INTO ${table} (${parentColumn}, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+    [parentId, index, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
   );
 }
 
@@ -464,9 +478,9 @@ async function persistDbToPostgres(db) {
     }
 
     for (const e of db.employees || []) await client.query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`, [String(e.id), e.name || "Unnamed Employee", e.active !== false, e.createdAt || new Date().toISOString()]);
-    for (const t of db.timeClockEntries || []) await client.query(`INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [String(t.id), t.employeeId == null ? null : String(t.employeeId), t.name || t.employeeName || "", t.clockIn || new Date().toISOString(), t.clockOut || null, t.minutes == null ? null : Number(t.minutes), t.date || todayString()]);
+    for (const t of db.timeClockEntries || []) await client.query(`INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date, clock_in_geo, clock_out_geo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [String(t.id), t.employeeId == null ? null : String(t.employeeId), t.name || t.employeeName || "", t.clockIn || new Date().toISOString(), t.clockOut || null, t.minutes == null ? null : Number(t.minutes), t.date || todayString(), t.clockInGeo || null, t.clockOutGeo || null]);
 
-    await client.query(`INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start) VALUES (1,$1,$2,$3,$4)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null]);
+    await client.query(`INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start, assigned_employee_ids) VALUES (1,$1,$2,$3,$4,$5)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null, db.dailySetup.assignedEmployeeIds || []]);
     for (const [date, state] of Object.entries(db.dailySetup.dailyChecklistState || {})) {
       for (const [item, checked] of Object.entries(state || {})) {
         await client.query(`INSERT INTO daily_checklist_state (check_date, item, checked) VALUES ($1,$2,$3)`, [date, item, !!checked]);
@@ -518,6 +532,34 @@ function nextNumericId(items) {
 
 function cleanString(v) {
   return String(v || "").trim();
+}
+
+function junkPriceForLoad(load) {
+  const label = String(load || "Quarter load").toLowerCase();
+  if (label.includes("full")) return 1000;
+  if (label.includes("3/4") || label.includes("three")) return 750;
+  if (label.includes("half")) return 500;
+  return 250;
+}
+
+function normalizeGeo(raw = null) {
+  if (!raw || typeof raw !== "object") return null;
+  const lat = Number(raw.latitude);
+  const lng = Number(raw.longitude);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return {
+    latitude: lat,
+    longitude: lng,
+    accuracy: raw.accuracy == null ? null : Number(raw.accuracy),
+    capturedAt: raw.capturedAt || new Date().toISOString()
+  };
+}
+
+function storeServiceGeo(service, action, geo) {
+  const cleanGeo = normalizeGeo(geo);
+  if (!cleanGeo) return;
+  service.actionGeo ||= {};
+  service.actionGeo[action] = cleanGeo;
 }
 
 function isHourly(service) {
@@ -644,7 +686,7 @@ function normalizeService(raw = {}, defaultCrewSize = 1) {
     hoursManual: Number(raw.hoursManual || 0),
     linearFeet: Number(raw.linearFeet || 0),
     junkLoad: raw.junkLoad || "Quarter load",
-    junkPrice: Number(raw.junkPrice || 175),
+    junkPrice: Number(raw.junkPrice ?? junkPriceForLoad(raw.junkLoad)),
     onMyWayTime: raw.onMyWayTime || null,
     arrivedTime: raw.arrivedTime || null,
     startTime: raw.startTime || null,
@@ -1182,6 +1224,12 @@ app.post("/daily-setup", (req, res) => {
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
+  if (Array.isArray(req.body.assignedEmployeeIds)) {
+    const activeIds = new Set((db.employees || []).filter(e => e.active !== false).map(e => String(e.id)));
+    db.dailySetup.assignedEmployeeIds = req.body.assignedEmployeeIds.map(String).filter(id => activeIds.has(id)).slice(0, db.dailySetup.crewSize);
+  } else {
+    db.dailySetup.assignedEmployeeIds ||= [];
+  }
 
   // Update all unfinished jobs for that day so crew size applies to both new jobs and unfinished jobs.
   if (Array.isArray(db.jobs)) {
@@ -1520,6 +1568,7 @@ app.post("/jobs/:id/services/:index/on-my-way", (req, res) => {
   if (!service) return;
 
   service.onMyWayTime = new Date().toISOString();
+  storeServiceGeo(service, "onMyWay", req.body.geo);
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
@@ -1529,6 +1578,7 @@ app.post("/jobs/:id/services/:index/arrived", (req, res) => {
   if (!service) return;
 
   service.arrivedTime = new Date().toISOString();
+  storeServiceGeo(service, "arrived", req.body.geo);
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
@@ -1543,6 +1593,7 @@ app.post("/jobs/:id/services/:index/start", (req, res) => {
 
   service.startTime = new Date().toISOString();
   service.endTime = null;
+  storeServiceGeo(service, "start", req.body.geo);
 
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
@@ -1557,6 +1608,7 @@ app.post("/jobs/:id/services/:index/stop", (req, res) => {
   }
 
   service.endTime = new Date().toISOString();
+  storeServiceGeo(service, "stop", req.body.geo);
   service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
 
   deductInventoryForJobIfNeeded(db, job);
@@ -2108,7 +2160,7 @@ app.post("/time-clock/clock-in", (req, res) => {
   db.timeClockEntries ||= [];
   const active = db.timeClockEntries.find(r => String(r.employeeId) === employeeId && !r.clockOut);
   if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });
-  const row = { id: nextNumericId(db.timeClockEntries), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString() };
+  const row = { id: nextNumericId(db.timeClockEntries), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString(), clockInGeo: normalizeGeo(req.body.geo), clockOutGeo: null };
   db.timeClockEntries.push(row);
   writeDb(db, "employee_clocked_in");
   res.json(row);
@@ -2122,6 +2174,7 @@ app.post("/time-clock/clock-out", (req, res) => {
   const row = (db.timeClockEntries || []).find(r => String(r.employeeId) === employeeId && !r.clockOut);
   if (!row) return res.status(400).json({ error: `${employee.name} is not currently clocked in` });
   row.clockOut = new Date().toISOString();
+  row.clockOutGeo = normalizeGeo(req.body.geo);
   row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
   writeDb(db, "employee_clocked_out");
   res.json(row);
