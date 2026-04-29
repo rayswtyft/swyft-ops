@@ -240,14 +240,10 @@ function normalizeDbShape(db = {}) {
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
-  if (Array.isArray(req.body.assignedEmployeeIds)) {
-    const activeIds = new Set((db.employees || []).filter(e => e.active !== false).map(e => String(e.id)));
-    db.dailySetup.assignedEmployeeIds = req.body.assignedEmployeeIds.map(String).filter(id => activeIds.has(id));
-    if (db.dailySetup.assignedEmployeeIds.length) db.dailySetup.crewSize = db.dailySetup.assignedEmployeeIds.length;
-  } else {
-    db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
-      ? db.dailySetup.assignedEmployeeIds.map(String)
-      : [];
+  db.dailySetup.assignedEmployeeIds =
+  Array.isArray(db.dailySetup.assignedEmployeeIds)
+    ? db.dailySetup.assignedEmployeeIds.map(String)
+    : [];
   }
   db.routeEvents ||= [];
   db.recurringJobs ||= [];
