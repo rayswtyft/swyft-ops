@@ -240,11 +240,9 @@ function normalizeDbShape(db = {}) {
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
-  db.dailySetup.assignedEmployeeIds =
-  Array.isArray(db.dailySetup.assignedEmployeeIds)
+  db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
     ? db.dailySetup.assignedEmployeeIds.map(String)
     : [];
-  }
   db.routeEvents ||= [];
   db.recurringJobs ||= [];
   db.checklistTemplates ||= {};
@@ -266,7 +264,7 @@ function normalizeDbShape(db = {}) {
   db.employees = db.employees.map(e => ({ id: e.id, name: e.name || e.fullName || "Unnamed Employee", active: e.active !== false, createdAt: e.createdAt || null }));
   db.timeClockEntries = db.timeClockEntries.map(t => ({ ...t, employeeId: t.employeeId || null, name: t.name || t.employeeName || "", date: t.date || todayString(), clockInGeo: t.clockInGeo || null, clockOutGeo: t.clockOutGeo || null }));
   return db;
-
+}
 
 function ensureDb() {
   if (!memoryDb) memoryDb = normalizeDbShape(defaultState());
