@@ -167,12 +167,51 @@ async function migrate() {
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS assigned_employee_ids JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS lunch_breaks JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
-  await query(`CREATE TABLE IF NOT EXISTS route_events (id TEXT PRIMARY KEY, event_date TEXT, action TEXT, job_id TEXT, service_index INTEGER, employee_id TEXT, employee_name TEXT, geo JSONB, address TEXT, created_at TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS recurring_jobs (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, services JSONB DEFAULT '[]'::jsonb, rule JSONB DEFAULT '{}'::jsonb, active BOOLEAN DEFAULT true, next_date TEXT, created_at TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS checklist_templates (id SERIAL PRIMARY KEY, service_key TEXT UNIQUE, items JSONB DEFAULT '[]'::jsonb)`);
-  await query(`CREATE TABLE IF NOT EXISTS inventory_purchases (id TEXT PRIMARY KEY, item_key TEXT, item_name TEXT, quantity NUMERIC, unit TEXT, vendor TEXT, cost NUMERIC, purchased_by TEXT, purchase_date TEXT, created_at TEXT)`);
-  await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS parent_job_id TEXT`);
-  await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS continued_from_job_id TEXT`);
+
+
+  await query(`CREATE TABLE IF NOT EXISTS route_events (
+    id TEXT PRIMARY KEY,
+    action TEXT,
+    job_id TEXT,
+    service_index INTEGER,
+    employee_id TEXT,
+    employee_name TEXT,
+    service_address TEXT,
+    formatted_address TEXT,
+    latitude NUMERIC,
+    longitude NUMERIC,
+    accuracy NUMERIC,
+    event_date TEXT,
+    created_at TEXT
+  )`);
+
+  await query(`CREATE TABLE IF NOT EXISTS recurring_jobs (
+    id TEXT PRIMARY KEY,
+    frequency TEXT,
+    start_date TEXT,
+    count INTEGER,
+    created_at TEXT,
+    settings JSONB DEFAULT '{}'::jsonb
+  )`);
+
+  await query(`CREATE TABLE IF NOT EXISTS checklist_templates (
+    id SERIAL PRIMARY KEY,
+    service_key TEXT,
+    item TEXT,
+    active BOOLEAN DEFAULT true
+  )`);
+
+  await query(`CREATE TABLE IF NOT EXISTS inventory_purchases (
+    id TEXT PRIMARY KEY,
+    item_key TEXT,
+    item_name TEXT,
+    quantity NUMERIC,
+    cost NUMERIC,
+    vendor TEXT,
+    purchased_by TEXT,
+    purchase_date TEXT,
+    created_at TEXT
+  )`);
 
   console.log("Postgres migration complete.");
 }
