@@ -240,9 +240,15 @@ function normalizeDbShape(db = {}) {
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
-  db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
-    ? db.dailySetup.assignedEmployeeIds.map(String)
-    : [];
+  if (Array.isArray(req.body.assignedEmployeeIds)) {
+    const activeIds = new Set((db.employees || []).filter(e => e.active !== false).map(e => String(e.id)));
+    db.dailySetup.assignedEmployeeIds = req.body.assignedEmployeeIds.map(String).filter(id => activeIds.has(id));
+    if (db.dailySetup.assignedEmployeeIds.length) db.dailySetup.crewSize = db.dailySetup.assignedEmployeeIds.length;
+  } else {
+    db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
+      ? db.dailySetup.assignedEmployeeIds.map(String)
+      : [];
+  }
   db.routeEvents ||= [];
   db.recurringJobs ||= [];
   db.checklistTemplates ||= {};
@@ -428,6 +434,27 @@ async function loadDbFromPostgres() {
     if (row.key === "inventoryLink") db.settings.inventoryLink = row.value?.value || "";
   }
 
+  try {
+    const routeRes = await query(`SELECT * FROM route_events ORDER BY created_at`);
+    db.routeEvents = routeRes.rows.map(r => ({
+      id: r.id,
+      action: r.action || "event",
+      jobId: r.job_id,
+      serviceIndex: r.service_index == null ? null : Number(r.service_index),
+      employeeId: r.employee_id,
+      employeeName: r.employee_name || "",
+      serviceAddress: r.service_address || "",
+      address: r.formatted_address || "",
+      latitude: r.latitude == null ? null : Number(r.latitude),
+      longitude: r.longitude == null ? null : Number(r.longitude),
+      accuracy: r.accuracy == null ? null : Number(r.accuracy),
+      date: r.event_date || (r.created_at || "").slice(0,10),
+      at: r.created_at || null
+    }));
+  } catch (_) {
+    db.routeEvents = [];
+  }
+
   const qbRes = await query(`SELECT * FROM quickbooks_tokens WHERE id = 1`);
   if (qbRes.rows[0]) {
     const q = qbRes.rows[0];
@@ -457,7 +484,7 @@ async function persistDbToPostgres(db) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tables = ["contractor_addresses","job_photos","job_services","estimate_services","jobs","estimates","contractors","inventory","employees","time_clock_entries","daily_checklist_state","daily_setup","settings","quickbooks_tokens"];
+    const tables = ["contractor_addresses","job_photos","job_services","estimate_services","jobs","estimates","contractors","inventory","employees","time_clock_entries","daily_checklist_state","daily_setup","settings","quickbooks_tokens","route_events"];
     for (const table of tables) await client.query(`DELETE FROM ${table}`);
 
     for (const c of db.contractors || []) {
@@ -494,6 +521,14 @@ async function persistDbToPostgres(db) {
     await client.query(`INSERT INTO settings (key, value) VALUES ($1,$2)`, ["inventoryLink", { value: db.settings.inventoryLink || "" }]);
     const qb = db.settings.quickbooks || {};
     await client.query(`INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at) VALUES (1,$1,$2,$3,$4,$5,$6,$7)`, [!!qb.connected, qb.realmId || null, qb.accessToken || null, qb.refreshToken || null, qb.expiresAt || null, qb.refreshExpiresAt || null, qb.lastConnectedAt || null]);
+
+    for (const ev of db.routeEvents || []) {
+      await client.query(
+        `INSERT INTO route_events (id, action, job_id, service_index, employee_id, employee_name, service_address, formatted_address, latitude, longitude, accuracy, event_date, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [String(ev.id || uuidv4()), ev.action || "event", ev.jobId == null ? null : String(ev.jobId), ev.serviceIndex == null ? null : Number(ev.serviceIndex), ev.employeeId == null ? null : String(ev.employeeId), ev.employeeName || "", ev.serviceAddress || "", ev.address || ev.formattedAddress || "", ev.latitude == null ? null : Number(ev.latitude), ev.longitude == null ? null : Number(ev.longitude), ev.accuracy == null ? null : Number(ev.accuracy), ev.date || ev.eventDate || (ev.at || "").slice(0,10) || todayString(), ev.at || ev.createdAt || new Date().toISOString()]
+      );
+    }
 
     await client.query("COMMIT");
   } catch (err) {
@@ -1746,7 +1781,7 @@ app.post("/jobs/:id/services/:index/arrived", (req, res) => {
 });
 
 app.post("/jobs/:id/services/:index/start", (req, res) => {
-  const { db, job, service } = getService(req, res);
+  const { db, job, service, index } = getService(req, res);
   if (!service) return;
 
   if (!isHourly(service)) {
@@ -1763,7 +1798,7 @@ app.post("/jobs/:id/services/:index/start", (req, res) => {
 });
 
 app.post("/jobs/:id/services/:index/stop", (req, res) => {
-  const { db, job, service } = getService(req, res);
+  const { db, job, service, index } = getService(req, res);
   if (!service) return;
 
   if (isHourly(service) && !service.startTime) {
