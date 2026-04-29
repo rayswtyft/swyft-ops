@@ -266,7 +266,7 @@ function normalizeDbShape(db = {}) {
   db.employees = db.employees.map(e => ({ id: e.id, name: e.name || e.fullName || "Unnamed Employee", active: e.active !== false, createdAt: e.createdAt || null }));
   db.timeClockEntries = db.timeClockEntries.map(t => ({ ...t, employeeId: t.employeeId || null, name: t.name || t.employeeName || "", date: t.date || todayString(), clockInGeo: t.clockInGeo || null, clockOutGeo: t.clockOutGeo || null }));
   return db;
-}
+
 
 function ensureDb() {
   if (!memoryDb) memoryDb = normalizeDbShape(defaultState());
