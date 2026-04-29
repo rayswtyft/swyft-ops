@@ -675,7 +675,7 @@
 
           <div class="muted">Crew size, finish day, QuickBooks review.</div>
 
-          <input id="managerDateMirror" type="date" disabled />
+          <input id="managerDateMirror" type="date" onchange="refreshAll(true)" />
 
           <input id="managerCrewSize" type="number" min="1" placeholder="Crew size" />
           <div class="muted" style="margin-top:10px;">Select who is working today. Hold/drag to select multiple if your device supports it.</div>
@@ -753,7 +753,7 @@
 
           <div class="row">
 
-            <input id="scheduleDate" type="date" />
+            <input id="scheduleDate" type="date" onchange="refreshAll(true)" />
 
             <div>
               <input id="scheduleCrewSize" type="number" min="1" placeholder="Crew size auto-counts selected workers" readonly />
@@ -1262,6 +1262,7 @@
     let inventoryEditMode = false;
 
     let dailySetup = { date: "", crewSize: 1, lunchMinutes: 0 };
+    let checklistExpanded = localStorage.getItem("swyftChecklistExpanded") !== "false";
 
     let selectedJobId = null;
 
@@ -1523,6 +1524,8 @@
 
       if (currentMode === "scheduling") return $("scheduleDate").value || dailySetup.date || todayLocalDate();
 
+      if (currentMode === "manager") return $("managerDateMirror").value || dailySetup.date || todayLocalDate();
+
       return dailySetup.date || todayLocalDate();
 
     }
@@ -1601,6 +1604,7 @@
         const mapsRes = await fetch("/maps-config");
         const mapsData = await mapsRes.json();
         googleMapsApiKey = mapsData.googleMapsApiKey || "";
+        setTimeout(initVisibleAddressAutocompletes, 250);
       } catch (_) {}
 
       const res = await fetch("/settings");
@@ -1633,11 +1637,13 @@
 
       dailySetup = await res.json();
 
+      const setupDate = dailySetup.date || todayLocalDate();
+
       $("dailyDate").value = todayLocalDate();
 
-      $("managerDateMirror").value = dailySetup.date || "";
+      if (!$("managerDateMirror").value) $("managerDateMirror").value = setupDate;
 
-      $("scheduleDate").value = dailySetup.date || "";
+      if (!$("scheduleDate").value) $("scheduleDate").value = setupDate;
 
     
 if (document.activeElement !== $("managerCrewSize")) {
@@ -1649,8 +1655,8 @@ if (document.activeElement !== $("scheduleCrewSize")) {
 }
 
 
-if (document.activeElement !== $("serviceDate")) {
-  $("serviceDate").value = dailySetup.date || "";
+if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
+  $("serviceDate").value = currentDate();
 }
       $("lunchMeta").innerText = `Lunch today: ${Number(dailySetup.lunchMinutes || 0).toFixed(2)} min • Active: ${dailySetup.activeLunchStart ? "Yes" : "No"}`;
       renderAssignedEmployeePickers();
@@ -1704,7 +1710,7 @@ if (document.activeElement !== $("serviceDate")) {
 
     async function loadChecklist(){
 
-      const date = $("dailyDate").value || dailySetup.date;
+      const date = currentDate();
 
       const res = await fetch(`/daily-checklist?date=${encodeURIComponent(date)}`);
 
@@ -1729,23 +1735,17 @@ if (document.activeElement !== $("serviceDate")) {
 
 
       $("dailyChecklist").innerHTML = `
-
-        <div class="check-shell">
-
-          ${data.items.map(item => `
-
-            <label class="check-row ${item.checked ? "checked" : ""}">
-
-              <input type="checkbox" ${item.checked ? "checked" : ""} onchange="toggleChecklist(${JSON.stringify(data.date)}, ${JSON.stringify(item.item)}, this.checked)" />
-
-              <span class="check-label">${item.item}</span>
-
-            </label>
-
-          `).join("")}
-
-        </div>
-
+        <button class="secondary" onclick="toggleChecklistPanel()">${checklistExpanded ? "Hide Checklist" : "View Checklist"}</button>
+        ${checklistExpanded ? `
+          <div class="check-shell">
+            ${data.items.map(item => `
+              <label class="check-row ${item.checked ? "checked" : ""}">
+                <input type="checkbox" ${item.checked ? "checked" : ""} onchange="toggleChecklist(${JSON.stringify(data.date)}, ${JSON.stringify(item.item)}, this.checked)" />
+                <span class="check-label">${item.item}</span>
+              </label>
+            `).join("")}
+          </div>
+        ` : `<div class="muted" style="margin-top:10px;">Checklist is collapsed after beginning-of-day setup.</div>`}
       `;
 
     }
@@ -3248,41 +3248,81 @@ if (document.activeElement !== $("serviceDate")) {
     }
 
     async function serviceAction(url){
-
-      const geo = await getBrowserGeo();
-      const res = await fetch(url, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ geo })
-      });
-
-      const data = await res.json();
-
-      if (data.error) return alert(data.error);
-
-      await refreshAll(true);
-
+      try {
+        const geo = await getBrowserGeo();
+        const res = await fetch(url, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ geo })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.error) return alert(data.error || "Service action failed");
+        await refreshAll(true);
+      } catch (err) {
+        console.error(err);
+        alert("Service action failed. Check connection and try again.");
+      }
     }
 
     async function jobAction(url){
-      const geo = await getBrowserGeo();
-      const res = await fetch(url, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({ geo })
-      });
-      const data = await res.json();
-      if (data.error) return alert(data.error);
-      await refreshAll(true);
+      try {
+        const geo = await getBrowserGeo();
+        const res = await fetch(url, {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ geo })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.error) return alert(data.error || "Job action failed");
+        await refreshAll(true);
+      } catch (err) {
+        console.error(err);
+        alert("Job action failed. Check connection and try again.");
+      }
     }
 
     function openDirections(address){
       if (!address) return alert("No service address found");
       const destination = encodeURIComponent(address);
-      const googleMapsApp = `comgooglemaps://?daddr=${destination}&directionsmode=driving`;
       const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
-      window.location.href = googleMapsApp;
-      setTimeout(() => { window.open(webUrl, "_blank"); }, 700);
+      window.location.href = webUrl;
+    }
+
+    let googlePlacesScriptLoading = null;
+    function loadGooglePlacesScript(){
+      if (!googleMapsApiKey) return Promise.resolve(false);
+      if (window.google?.maps?.places) return Promise.resolve(true);
+      if (googlePlacesScriptLoading) return googlePlacesScriptLoading;
+      googlePlacesScriptLoading = new Promise(resolve => {
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.head.appendChild(script);
+      });
+      return googlePlacesScriptLoading;
+    }
+
+    async function initAddressAutocomplete(inputId){
+      const input = $(inputId);
+      if (!input || input.dataset.autocompleteReady === "1") return;
+      const loaded = await loadGooglePlacesScript();
+      if (!loaded || !window.google?.maps?.places) return;
+      const autocomplete = new google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        fields: ["formatted_address", "name", "geometry"]
+      });
+      autocomplete.addListener("place_changed", () => {
+        const place = autocomplete.getPlace();
+        if (place?.formatted_address) input.value = place.formatted_address;
+      });
+      input.dataset.autocompleteReady = "1";
+    }
+
+    function initVisibleAddressAutocompletes(){
+      ["serviceAddress", "estimateAddress", "recurringAddress", "editAddress"].forEach(id => initAddressAutocomplete(id));
     }
 
     async function leaveJobOpen(jobId){
@@ -3643,18 +3683,28 @@ if (document.activeElement !== $("serviceDate")) {
 
 
 
-   async function toggleChecklist(date, item, checked) {
-      const el = event.target.closest(".check-row");
-      if (el) el.classList.toggle("checked", checked);
+    function toggleChecklistPanel(){
+      checklistExpanded = !checklistExpanded;
+      localStorage.setItem("swyftChecklistExpanded", checklistExpanded ? "true" : "false");
+      loadChecklist();
+    }
 
-      fetch("/daily-checklist/toggle", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, item, checked })
-      }).catch(() => {
+   async function toggleChecklist(date, item, checked) {
+      const el = event?.target?.closest(".check-row");
+      if (el) el.classList.toggle("checked", checked);
+      try {
+        const res = await fetch("/daily-checklist/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, item, checked })
+        });
+        if (!res.ok) throw new Error("Checklist save failed");
+      } catch (err) {
         if (el) el.classList.toggle("checked", !checked);
+        const input = el?.querySelector('input[type="checkbox"]');
+        if (input) input.checked = !checked;
         alert("Checklist save failed. Please try again.");
-      });
+      }
     }
 
 
@@ -3700,7 +3750,7 @@ async function saveCrewSize() {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      date: dailySetup.date || todayLocalDate(),
+      date: $("managerDateMirror").value || dailySetup.date || todayLocalDate(),
       crewSize,
       assignedEmployeeIds
     })
@@ -3953,11 +4003,11 @@ async function saveScheduleCrew() {
 
 
 
-    function openJobModal(){ $("jobModal").classList.remove("hidden"); }
+    function openJobModal(){ $("jobModal").classList.remove("hidden"); setTimeout(initVisibleAddressAutocompletes, 250); }
 
     function closeJobModal(){ $("jobModal").classList.add("hidden"); }
 
-    function openEstimateCreateModal(){ $("estimateCreateModal").classList.remove("hidden"); }
+    function openEstimateCreateModal(){ $("estimateCreateModal").classList.remove("hidden"); setTimeout(initVisibleAddressAutocompletes, 250); }
 
     function closeEstimateCreateModal(){ $("estimateCreateModal").classList.add("hidden"); }
 
@@ -4175,7 +4225,7 @@ async function saveScheduleCrew() {
 
     document.addEventListener("change", async (e) => {
 
-      if (e.target.id === "dailyDate" || e.target.id === "scheduleDate") {
+      if (e.target.id === "dailyDate" || e.target.id === "scheduleDate" || e.target.id === "managerDateMirror") {
 
         await refreshAll(true);
 
@@ -4239,6 +4289,7 @@ async function saveScheduleCrew() {
     let recurringServices = [];
     function openRecurringJobModal(){
       $("recurringJobModal").classList.remove("hidden");
+      setTimeout(initVisibleAddressAutocompletes, 250);
       $("recurringStartDate").value = $("scheduleDate").value || dailySetup.date || todayLocalDate();
       $("recurringContractor").innerHTML = contractors.map(c => `<option value="${c.id}">${contractorLabel(c)}</option>`).join("");
       recurringServices = [{ category:"Cleaning", subtype:"General cleaning", crewSize: dailySetup.crewSize || 1, hoursManual:0, junkLoad:"Quarter load", junkPrice:250, linearFeet:0 }];
