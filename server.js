@@ -194,6 +194,10 @@ function defaultState() {
     inventory: defaultInventory(),
     employees: [{ id: 1, name: "Employee 1", active: true }],
     timeClockEntries: [],
+    routeEvents: [],
+    recurringJobs: [],
+    checklistTemplates: {},
+    inventoryPurchases: [],
     settings: {
       inventoryLink: "",
       quickbooks: {
@@ -211,13 +215,8 @@ function defaultState() {
       crewSize: 1,
       lunchBreaks: [],
       activeLunchStart: null,
-      dailyChecklistState: {},
-      assignedEmployeeIds: []
-    },
-    recurringJobs: [],
-    routeEvents: [],
-    checklistTemplates: {},
-    inventoryPurchases: []
+      dailyChecklistState: {}
+    }
   };
 }
 
@@ -233,10 +232,6 @@ function normalizeDbShape(db = {}) {
   db.inventory ||= base.inventory;
   db.employees ||= base.employees;
   db.timeClockEntries ||= [];
-  db.recurringJobs ||= [];
-  db.routeEvents ||= [];
-  db.checklistTemplates ||= {};
-  db.inventoryPurchases ||= [];
   db.settings ||= {};
   db.settings.inventoryLink ||= "";
   db.settings.quickbooks ||= base.settings.quickbooks;
@@ -245,7 +240,13 @@ function normalizeDbShape(db = {}) {
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
-  db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds) ? db.dailySetup.assignedEmployeeIds.map(String) : [];
+  db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
+    ? db.dailySetup.assignedEmployeeIds.map(String)
+    : [];
+  db.routeEvents ||= [];
+  db.recurringJobs ||= [];
+  db.checklistTemplates ||= {};
+  db.inventoryPurchases ||= [];
   db.contractors = db.contractors.map(c => ({ ...c, serviceAddresses: Array.isArray(c.serviceAddresses) ? c.serviceAddresses : [] }));
   db.jobs = db.jobs.map(j => ({
     ...j,
@@ -256,10 +257,7 @@ function normalizeDbShape(db = {}) {
     finishedAt: j.finishedAt || null,
     quickbooksStatus: j.quickbooksStatus || "not_sent",
     quickbooksInvoiceId: j.quickbooksInvoiceId || null,
-    sortOrder: Number(j.sortOrder || 0),
-    openStatus: j.openStatus || "single_day",
-    parentJobId: j.parentJobId || null,
-    continuedFromJobId: j.continuedFromJobId || null
+    sortOrder: Number(j.sortOrder || 0)
   }));
   db.estimates = db.estimates.map(e => ({ ...e, services: Array.isArray(e.services) ? e.services : [], status: e.status || "open" }));
   db.inventory = db.inventory.map(i => ({ ...i, active: i.active !== false }));
@@ -335,14 +333,7 @@ await query(`
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS route_events (id TEXT PRIMARY KEY, event_date TEXT, action TEXT, job_id TEXT, service_index INTEGER, employee_id TEXT, employee_name TEXT, geo JSONB, address TEXT, created_at TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS recurring_jobs (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, services JSONB DEFAULT '[]'::jsonb, rule JSONB DEFAULT '{}'::jsonb, active BOOLEAN DEFAULT true, next_date TEXT, created_at TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS checklist_templates (id SERIAL PRIMARY KEY, service_key TEXT UNIQUE, items JSONB DEFAULT '[]'::jsonb)`);
-  await query(`CREATE TABLE IF NOT EXISTS inventory_purchases (id TEXT PRIMARY KEY, item_key TEXT, item_name TEXT, quantity NUMERIC, unit TEXT, vendor TEXT, cost NUMERIC, purchased_by TEXT, purchase_date TEXT, created_at TEXT)`);
-  await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS parent_job_id TEXT`);
-  await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS continued_from_job_id TEXT`);
 }
-
 
 async function loadDbFromPostgres() {
   const db = defaultState();
@@ -390,8 +381,6 @@ async function loadDbFromPostgres() {
     quickbooksInvoiceId: j.quickbooks_invoice_id || null,
     fromEstimateId: j.from_estimate_id ? numericIfPossible(j.from_estimate_id) : undefined,
     openStatus: j.open_status || "single_day",
-    parentJobId: j.parent_job_id ? numericIfPossible(j.parent_job_id) : null,
-    continuedFromJobId: j.continued_from_job_id ? numericIfPossible(j.continued_from_job_id) : null,
     services: servicesRes.rows.filter(s => String(s.job_id) === String(j.id)).map(serviceRowToObject),
     photos: photosRes.rows.filter(p => String(p.job_id) === String(j.id)).map(p => ({ id: p.id, url: p.url, tag: p.tag, caption: p.caption || "", createdAt: p.created_at || null }))
   }));
@@ -414,27 +403,6 @@ async function loadDbFromPostgres() {
 
   const timeRes = await query(`SELECT * FROM time_clock_entries ORDER BY clock_in DESC`);
   db.timeClockEntries = timeRes.rows.map(t => ({ id: numericIfPossible(t.id), employeeId: t.employee_id ? numericIfPossible(t.employee_id) : null, name: t.employee_name, clockIn: t.clock_in, clockOut: t.clock_out, minutes: t.minutes === null ? null : Number(t.minutes), date: t.entry_date, clockInGeo: t.clock_in_geo || null, clockOutGeo: t.clock_out_geo || null }));
-
-  try {
-    const routeRes = await query(`SELECT * FROM route_events ORDER BY created_at DESC`);
-    db.routeEvents = routeRes.rows.map(e => ({ id: numericIfPossible(e.id), date: e.event_date, action: e.action, jobId: e.job_id ? numericIfPossible(e.job_id) : null, serviceIndex: e.service_index, employeeId: e.employee_id ? numericIfPossible(e.employee_id) : null, employeeName: e.employee_name || "", geo: e.geo || null, address: e.address || "", createdAt: e.created_at }));
-  } catch (_) { db.routeEvents = []; }
-
-  try {
-    const recRes = await query(`SELECT * FROM recurring_jobs ORDER BY created_at DESC`);
-    db.recurringJobs = recRes.rows.map(r => ({ id: numericIfPossible(r.id), contractorId: r.contractor_id, serviceAddress: r.service_address || "", notes: r.notes || "", services: r.services || [], rule: r.rule || {}, active: r.active !== false, nextDate: r.next_date || null, createdAt: r.created_at || null }));
-  } catch (_) { db.recurringJobs = []; }
-
-  try {
-    const tmplRes = await query(`SELECT * FROM checklist_templates`);
-    db.checklistTemplates = {};
-    for (const row of tmplRes.rows) db.checklistTemplates[row.service_key] = row.items || [];
-  } catch (_) { db.checklistTemplates = {}; }
-
-  try {
-    const purchRes = await query(`SELECT * FROM inventory_purchases ORDER BY purchase_date DESC, created_at DESC`);
-    db.inventoryPurchases = purchRes.rows.map(p => ({ id: numericIfPossible(p.id), itemKey: p.item_key, itemName: p.item_name, quantity: p.quantity === null ? null : Number(p.quantity), unit: p.unit, vendor: p.vendor, cost: p.cost === null ? null : Number(p.cost), purchasedBy: p.purchased_by, purchaseDate: p.purchase_date, createdAt: p.created_at }));
-  } catch (_) { db.inventoryPurchases = []; }
 
   const setupRes = await query(`SELECT * FROM daily_setup WHERE id = 1`);
   if (setupRes.rows[0]) {
@@ -489,7 +457,7 @@ async function persistDbToPostgres(db) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const tables = ["contractor_addresses","job_photos","job_services","estimate_services","jobs","estimates","contractors","inventory","employees","time_clock_entries","daily_checklist_state","daily_setup","settings","quickbooks_tokens","route_events","recurring_jobs","checklist_templates","inventory_purchases"];
+    const tables = ["contractor_addresses","job_photos","job_services","estimate_services","jobs","estimates","contractors","inventory","employees","time_clock_entries","daily_checklist_state","daily_setup","settings","quickbooks_tokens"];
     for (const table of tables) await client.query(`DELETE FROM ${table}`);
 
     for (const c of db.contractors || []) {
@@ -516,14 +484,6 @@ async function persistDbToPostgres(db) {
 
     for (const e of db.employees || []) await client.query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`, [String(e.id), e.name || "Unnamed Employee", e.active !== false, e.createdAt || new Date().toISOString()]);
     for (const t of db.timeClockEntries || []) await client.query(`INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date, clock_in_geo, clock_out_geo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [String(t.id), t.employeeId == null ? null : String(t.employeeId), t.name || t.employeeName || "", t.clockIn || new Date().toISOString(), t.clockOut || null, t.minutes == null ? null : Number(t.minutes), t.date || todayString(), t.clockInGeo || null, t.clockOutGeo || null]);
-
-    for (const e of db.routeEvents || []) await client.query(`INSERT INTO route_events (id, event_date, action, job_id, service_index, employee_id, employee_name, geo, address, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [String(e.id), e.date || todayString(), e.action || "unknown", e.jobId == null ? null : String(e.jobId), e.serviceIndex == null ? null : Number(e.serviceIndex), e.employeeId == null ? null : String(e.employeeId), e.employeeName || "", e.geo || null, e.address || e.geo?.formattedAddress || "", e.createdAt || new Date().toISOString()]);
-
-    for (const r of db.recurringJobs || []) await client.query(`INSERT INTO recurring_jobs (id, contractor_id, service_address, notes, services, rule, active, next_date, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [String(r.id), r.contractorId == null ? null : String(r.contractorId), r.serviceAddress || "", r.notes || "", r.services || [], r.rule || {}, r.active !== false, r.nextDate || null, r.createdAt || new Date().toISOString()]);
-
-    for (const [serviceKey, items] of Object.entries(db.checklistTemplates || {})) await client.query(`INSERT INTO checklist_templates (service_key, items) VALUES ($1,$2)`, [serviceKey, Array.isArray(items) ? items : []]);
-
-    for (const p of db.inventoryPurchases || []) await client.query(`INSERT INTO inventory_purchases (id, item_key, item_name, quantity, unit, vendor, cost, purchased_by, purchase_date, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [String(p.id), p.itemKey || p.item_key || "", p.itemName || p.item_name || "", Number(p.quantity || 0), p.unit || "", p.vendor || "", Number(p.cost || 0), p.purchasedBy || p.purchased_by || "", p.purchaseDate || p.purchase_date || todayString(), p.createdAt || new Date().toISOString()]);
 
     await client.query(`INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start, assigned_employee_ids) VALUES (1,$1,$2,$3,$4,$5)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null, db.dailySetup.assignedEmployeeIds || []]);
     for (const [date, state] of Object.entries(db.dailySetup.dailyChecklistState || {})) {
@@ -607,48 +567,47 @@ function storeServiceGeo(service, action, geo) {
   service.actionGeo[action] = cleanGeo;
 }
 
-
-async function reverseGeocodeGeo(geo) {
+function storeJobGeo(job, action, geo) {
   const cleanGeo = normalizeGeo(geo);
-  if (!cleanGeo || !process.env.GOOGLE_MAPS_API_KEY) return cleanGeo;
-  try {
-    const response = await axios.get("https://maps.googleapis.com/maps/api/geocode/json", {
-      params: {
-        latlng: `${cleanGeo.latitude},${cleanGeo.longitude}`,
-        key: process.env.GOOGLE_MAPS_API_KEY
-      }
-    });
-    const result = response.data?.results?.[0];
-    if (result?.formatted_address) {
-      cleanGeo.formattedAddress = result.formatted_address;
-      cleanGeo.placeId = result.place_id || null;
-    }
-  } catch (err) {
-    cleanGeo.reverseGeocodeError = err.message;
-  }
-  return cleanGeo;
+  if (!cleanGeo) return;
+  job.actionGeo ||= {};
+  job.actionGeo[action] = cleanGeo;
 }
 
-async function normalizeGeoWithAddress(raw = null) {
-  return await reverseGeocodeGeo(raw);
-}
-
-function recordRouteEvent(db, details = {}) {
+function recordRouteEvent(db, event = {}) {
   db.routeEvents ||= [];
-  const event = {
-    id: nextNumericId(db.routeEvents),
-    action: details.action || "unknown",
-    jobId: details.jobId == null ? null : details.jobId,
-    serviceIndex: details.serviceIndex == null ? null : details.serviceIndex,
-    employeeId: details.employeeId == null ? null : details.employeeId,
-    employeeName: details.employeeName || "",
-    date: details.date || todayString(),
-    createdAt: details.createdAt || new Date().toISOString(),
-    geo: details.geo || null,
-    address: details.geo?.formattedAddress || ""
+  const cleanGeo = normalizeGeo(event.geo);
+  const row = {
+    id: uuidv4(),
+    action: event.action || "event",
+    jobId: event.jobId == null ? null : String(event.jobId),
+    serviceIndex: event.serviceIndex == null ? null : Number(event.serviceIndex),
+    employeeId: event.employeeId == null ? null : String(event.employeeId),
+    employeeName: event.employeeName || "",
+    serviceAddress: event.serviceAddress || "",
+    address: cleanGeo?.address || event.address || "",
+    latitude: cleanGeo?.latitude ?? null,
+    longitude: cleanGeo?.longitude ?? null,
+    accuracy: cleanGeo?.accuracy ?? null,
+    at: new Date().toISOString(),
+    date: event.date || todayString()
   };
-  db.routeEvents.push(event);
-  return event;
+  db.routeEvents.push(row);
+  return row;
+}
+
+function addDays(dateStr, days) {
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + Number(days || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+function recurringDates(startDate, frequency, count) {
+  const total = Math.max(1, Math.min(60, Number(count || 1)));
+  const step = frequency === "biweekly" ? 14 : frequency === "monthly" ? 30 : 7;
+  const dates = [];
+  for (let i = 0; i < total; i++) dates.push(addDays(startDate, i * step));
+  return dates;
 }
 
 function isHourly(service) {
@@ -1275,6 +1234,10 @@ app.get("/meta", (_req, res) => {
   });
 });
 
+app.get("/maps-config", (_req, res) => {
+  res.json({ googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "" });
+});
+
 app.get("/settings", (_req, res) => {
   const db = readDb();
 
@@ -1313,7 +1276,13 @@ app.post("/daily-setup", (req, res) => {
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
   db.dailySetup.lunchBreaks ||= [];
   db.dailySetup.dailyChecklistState ||= {};
-  db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds) ? db.dailySetup.assignedEmployeeIds.map(String) : [];
+  db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
+    ? db.dailySetup.assignedEmployeeIds.map(String)
+    : [];
+  db.routeEvents ||= [];
+  db.recurringJobs ||= [];
+  db.checklistTemplates ||= {};
+  db.inventoryPurchases ||= [];
 
   // Update all unfinished jobs for that day so crew size applies to both new jobs and unfinished jobs.
   if (Array.isArray(db.jobs)) {
@@ -1625,6 +1594,115 @@ app.post("/jobs/:id/archive", (req, res) => {
   res.json({ ok: true });
 });
 
+
+/* ---------- JOB LEVEL FIELD FLOW ---------- */
+
+app.post("/jobs/:id/on-my-way", (req, res) => {
+  const db = readDb();
+  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  const now = new Date().toISOString();
+  job.onMyWayTime = now;
+  storeJobGeo(job, "onMyWay", req.body.geo);
+  for (const service of job.services || []) {
+    if (!service.onMyWayTime) service.onMyWayTime = now;
+  }
+  recordRouteEvent(db, { action: "on_my_way", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+  writeDb(db, "job_updated", { id: job.id });
+  res.json(hydrateJob(job, db));
+});
+
+app.post("/jobs/:id/arrived", (req, res) => {
+  const db = readDb();
+  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  const now = new Date().toISOString();
+  job.arrivedTime = now;
+  storeJobGeo(job, "arrived", req.body.geo);
+  for (const service of job.services || []) {
+    if (!service.arrivedTime) service.arrivedTime = now;
+  }
+  recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+  writeDb(db, "job_updated", { id: job.id });
+  res.json(hydrateJob(job, db));
+});
+
+app.post("/jobs/:id/leave-open", (req, res) => {
+  const db = readDb();
+  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+  if (!job) return res.status(404).json({ error: "Job not found" });
+  job.openStatus = "open";
+  job.finishedAt = null;
+  writeDb(db, "job_left_open", { id: job.id });
+  res.json(hydrateJob(job, db));
+});
+
+app.post("/jobs/:id/continue", (req, res) => {
+  const db = readDb();
+  const oldJob = db.jobs.find(j => String(j.id) === String(req.params.id));
+  if (!oldJob) return res.status(404).json({ error: "Job not found" });
+  const nextDate = cleanString(req.body.serviceDate) || addDays(oldJob.serviceDate || todayString(), 1);
+  const job = {
+    ...cloneDb(oldJob),
+    id: nextNumericId(db.jobs),
+    serviceDate: nextDate,
+    createdAt: new Date().toISOString(),
+    sortOrder: nextSortOrderForDate(db, nextDate),
+    finishedAt: null,
+    archivedAt: null,
+    deletedAt: null,
+    openStatus: "continuation",
+    services: (oldJob.services || []).map(s => normalizeService({ category: s.category, subtype: s.subtype, crewSize: s.crewSize, junkLoad: s.junkLoad, junkPrice: s.junkPrice, linearFeet: s.linearFeet }, db.dailySetup.crewSize)),
+    photos: []
+  };
+  oldJob.openStatus = "continued";
+  db.jobs.push(job);
+  writeDb(db, "job_continued", { id: job.id, fromJobId: oldJob.id });
+  res.json(hydrateJob(job, db));
+});
+
+app.get("/route-history", (req, res) => {
+  const db = readDb();
+  const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
+  let rows = db.routeEvents || [];
+  rows = rows.filter(r => !date || r.date === date || String(r.at || "").startsWith(date));
+  if (req.query.jobId) rows = rows.filter(r => String(r.jobId) === String(req.query.jobId));
+  if (req.query.employeeId) rows = rows.filter(r => String(r.employeeId) === String(req.query.employeeId));
+  res.json(rows.sort((a,b) => String(a.at).localeCompare(String(b.at))));
+});
+
+app.post("/recurring-jobs", (req, res) => {
+  const db = readDb();
+  const startDate = cleanString(req.body.startDate) || db.dailySetup.date || todayString();
+  const dates = recurringDates(startDate, cleanString(req.body.frequency) || "weekly", req.body.count || 4);
+  const created = [];
+  for (const date of dates) {
+    const job = {
+      id: nextNumericId(db.jobs),
+      contractorId: String(req.body.contractorId || ""),
+      serviceAddress: cleanString(req.body.serviceAddress),
+      serviceDate: date,
+      notes: cleanString(req.body.notes),
+      createdAt: new Date().toISOString(),
+      services: Array.isArray(req.body.services) ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize)) : [],
+      photos: [],
+      sortOrder: nextSortOrderForDate(db, date),
+      deletedAt: null,
+      archivedAt: null,
+      finishedAt: null,
+      quickbooksStatus: "not_sent",
+      quickbooksInvoiceId: null,
+      openStatus: "recurring"
+    };
+    db.jobs.push(job);
+    created.push(job);
+  }
+  db.recurringJobs ||= [];
+  db.recurringJobs.push({ id: uuidv4(), createdAt: new Date().toISOString(), startDate, frequency: cleanString(req.body.frequency) || "weekly", count: created.length });
+  writeDb(db, "recurring_jobs_created", { count: created.length });
+  res.json({ ok: true, jobs: created.map(j => hydrateJob(j, db)) });
+});
+
 /* ---------- SERVICE FLOW ---------- */
 
 function getService(req, res) {
@@ -1647,31 +1725,27 @@ function getService(req, res) {
   return { db, job, service, index };
 }
 
-app.post("/jobs/:id/services/:index/on-my-way", async (req, res) => {
+app.post("/jobs/:id/services/:index/on-my-way", (req, res) => {
   const { db, job, service } = getService(req, res);
   if (!service) return;
 
   service.onMyWayTime = new Date().toISOString();
-  const geo = await normalizeGeoWithAddress(req.body.geo);
-  storeServiceGeo(service, "onMyWay", geo);
-  recordRouteEvent(db, { action: "onMyWay", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
+  storeServiceGeo(service, "onMyWay", req.body.geo);
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
 
-app.post("/jobs/:id/services/:index/arrived", async (req, res) => {
+app.post("/jobs/:id/services/:index/arrived", (req, res) => {
   const { db, job, service } = getService(req, res);
   if (!service) return;
 
   service.arrivedTime = new Date().toISOString();
-  const geo = await normalizeGeoWithAddress(req.body.geo);
-  storeServiceGeo(service, "arrived", geo);
-  recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
+  storeServiceGeo(service, "arrived", req.body.geo);
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
 
-app.post("/jobs/:id/services/:index/start", async (req, res) => {
+app.post("/jobs/:id/services/:index/start", (req, res) => {
   const { db, job, service } = getService(req, res);
   if (!service) return;
 
@@ -1681,15 +1755,14 @@ app.post("/jobs/:id/services/:index/start", async (req, res) => {
 
   service.startTime = new Date().toISOString();
   service.endTime = null;
-  const geo = await normalizeGeoWithAddress(req.body.geo);
-  storeServiceGeo(service, "start", geo);
-  recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
+  storeServiceGeo(service, "start", req.body.geo);
+  recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
 
   writeDb(db, "job_updated", { id: job.id });
   res.json(hydrateJob(job, db));
 });
 
-app.post("/jobs/:id/services/:index/stop", async (req, res) => {
+app.post("/jobs/:id/services/:index/stop", (req, res) => {
   const { db, job, service } = getService(req, res);
   if (!service) return;
 
@@ -1698,9 +1771,8 @@ app.post("/jobs/:id/services/:index/stop", async (req, res) => {
   }
 
   service.endTime = new Date().toISOString();
-  const geo = await normalizeGeoWithAddress(req.body.geo);
-  storeServiceGeo(service, "stop", geo);
-  recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: Number(req.params.index), date: job.serviceDate, geo });
+  storeServiceGeo(service, "stop", req.body.geo);
+  recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
   service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
 
   deductInventoryForJobIfNeeded(db, job);
@@ -2244,7 +2316,7 @@ app.get("/time-clock", (req, res) => {
   res.json(rows);
 });
 
-app.post("/time-clock/clock-in", async (req, res) => {
+app.post("/time-clock/clock-in", (req, res) => {
   const db = readDb();
   const employeeId = String(req.body.employeeId || "");
   const employee = (db.employees || []).find(e => String(e.id) === employeeId && e.active !== false);
@@ -2252,15 +2324,14 @@ app.post("/time-clock/clock-in", async (req, res) => {
   db.timeClockEntries ||= [];
   const active = db.timeClockEntries.find(r => String(r.employeeId) === employeeId && !r.clockOut);
   if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });
-  const clockInGeo = await normalizeGeoWithAddress(req.body.geo);
-  const row = { id: nextNumericId(db.timeClockEntries), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString(), clockInGeo, clockOutGeo: null };
-  recordRouteEvent(db, { action: "clockIn", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: clockInGeo });
+  const row = { id: nextNumericId(db.timeClockEntries), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString(), clockInGeo: normalizeGeo(req.body.geo), clockOutGeo: null };
   db.timeClockEntries.push(row);
+  recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
   writeDb(db, "employee_clocked_in");
   res.json(row);
 });
 
-app.post("/time-clock/clock-out", async (req, res) => {
+app.post("/time-clock/clock-out", (req, res) => {
   const db = readDb();
   const employeeId = String(req.body.employeeId || "");
   const employee = (db.employees || []).find(e => String(e.id) === employeeId);
@@ -2268,8 +2339,8 @@ app.post("/time-clock/clock-out", async (req, res) => {
   const row = (db.timeClockEntries || []).find(r => String(r.employeeId) === employeeId && !r.clockOut);
   if (!row) return res.status(400).json({ error: `${employee.name} is not currently clocked in` });
   row.clockOut = new Date().toISOString();
-  row.clockOutGeo = await normalizeGeoWithAddress(req.body.geo);
-  recordRouteEvent(db, { action: "clockOut", employeeId: row.employeeId, employeeName: row.name, date: row.date, geo: row.clockOutGeo });
+  row.clockOutGeo = normalizeGeo(req.body.geo);
+  recordRouteEvent(db, { action: "clock_out", employeeId: employee.id, employeeName: employee.name, date: row.date || todayString(), geo: req.body.geo });
   row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
   writeDb(db, "employee_clocked_out");
   res.json(row);
@@ -2280,423 +2351,6 @@ app.post("/time-clock/clock-out", async (req, res) => {
 app.get("/health", (_req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
-
-
-
-/* ---------- FULL V4 MAPS / ROUTES / RECURRING / INVENTORY ---------- */
-
-app.get("/maps/config", (_req, res) => {
-  res.json({ apiKey: process.env.GOOGLE_MAPS_API_KEY || "" });
-});
-
-app.post("/maps/reverse-geocode", async (req, res) => {
-  const geo = await normalizeGeoWithAddress(req.body.geo || req.body);
-  res.json({ geo, address: geo?.formattedAddress || "" });
-});
-
-app.get("/route-history", (req, res) => {
-  const db = readDb();
-  const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
-  const employeeId = req.query.employeeId ? String(req.query.employeeId) : null;
-  const jobId = req.query.jobId ? String(req.query.jobId) : null;
-  let rows = db.routeEvents || [];
-  rows = rows.filter(e => !date || e.date === date || String(e.createdAt || "").slice(0,10) === date);
-  if (employeeId) rows = rows.filter(e => String(e.employeeId) === employeeId);
-  if (jobId) rows = rows.filter(e => String(e.jobId) === jobId);
-  rows.sort((a,b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
-  res.json(rows);
-});
-
-function addDays(dateStr, days) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setDate(d.getDate() + Number(days || 0));
-  return d.toISOString().slice(0,10);
-}
-
-function nextRecurringDate(fromDate, rule = {}) {
-  const type = rule.type || "weekly";
-  if (type === "biweekly") return addDays(fromDate, 14);
-  if (type === "monthly") {
-    const d = new Date(`${fromDate}T00:00:00`);
-    d.setMonth(d.getMonth() + 1);
-    return d.toISOString().slice(0,10);
-  }
-  if (type === "custom_days") return addDays(fromDate, Number(rule.intervalDays || 7));
-  return addDays(fromDate, 7);
-}
-
-app.get("/recurring-jobs", (_req, res) => {
-  const db = readDb();
-  res.json(db.recurringJobs || []);
-});
-
-app.post("/recurring-jobs", (req, res) => {
-  const db = readDb();
-  const startDate = cleanString(req.body.startDate) || db.dailySetup.date || todayString();
-  const rec = {
-    id: nextNumericId(db.recurringJobs || []),
-    contractorId: req.body.contractorId == null ? null : String(req.body.contractorId),
-    serviceAddress: cleanString(req.body.serviceAddress),
-    notes: cleanString(req.body.notes),
-    services: Array.isArray(req.body.services) ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize)) : [],
-    rule: req.body.rule || { type: "weekly" },
-    active: true,
-    nextDate: startDate,
-    createdAt: new Date().toISOString()
-  };
-  db.recurringJobs ||= [];
-  db.recurringJobs.push(rec);
-  writeDb(db, "recurring_job_added", { id: rec.id });
-  res.json(rec);
-});
-
-app.post("/recurring-jobs/generate", (req, res) => {
-  const db = readDb();
-  const throughDate = cleanString(req.body.throughDate) || addDays(todayString(), 30);
-  const created = [];
-  for (const rec of db.recurringJobs || []) {
-    if (rec.active === false) continue;
-    let nextDate = rec.nextDate || todayString();
-    let guard = 0;
-    while (nextDate <= throughDate && guard < 80) {
-      const exists = db.jobs.some(j => String(j.recurringJobId || "") === String(rec.id) && j.serviceDate === nextDate && !j.deletedAt);
-      if (!exists) {
-        const job = {
-          id: nextNumericId(db.jobs),
-          contractorId: rec.contractorId,
-          serviceAddress: rec.serviceAddress || "",
-          serviceDate: nextDate,
-          notes: rec.notes || "",
-          createdAt: new Date().toISOString(),
-          services: (rec.services || []).map(s => normalizeService(s, db.dailySetup.crewSize)),
-          photos: [],
-          sortOrder: nextSortOrderForDate(db, nextDate),
-          deletedAt: null,
-          archivedAt: null,
-          finishedAt: null,
-          quickbooksStatus: "not_sent",
-          quickbooksInvoiceId: null,
-          openStatus: "single_day",
-          recurringJobId: rec.id
-        };
-        db.jobs.push(job);
-        created.push(job.id);
-      }
-      nextDate = nextRecurringDate(nextDate, rec.rule || {});
-      guard++;
-    }
-    rec.nextDate = nextDate;
-  }
-  writeDb(db, "recurring_jobs_generated", { created });
-  res.json({ ok: true, created });
-});
-
-app.post("/jobs/:id/continue", (req, res) => {
-  const db = readDb();
-  const source = db.jobs.find(j => String(j.id) === String(req.params.id));
-  if (!source) return res.status(404).json({ error: "Job not found" });
-  const serviceDate = cleanString(req.body.serviceDate) || addDays(source.serviceDate || todayString(), 1);
-  source.openStatus = "open";
-  const job = {
-    ...cloneDb(source),
-    id: nextNumericId(db.jobs),
-    serviceDate,
-    createdAt: new Date().toISOString(),
-    services: (source.services || []).map(s => normalizeService({ ...s, startTime:null, endTime:null, onMyWayTime:null, arrivedTime:null, actionGeo:{} }, db.dailySetup.crewSize)),
-    photos: [],
-    sortOrder: nextSortOrderForDate(db, serviceDate),
-    finishedAt: null,
-    archivedAt: null,
-    deletedAt: null,
-    quickbooksStatus: "not_sent",
-    quickbooksInvoiceId: null,
-    openStatus: "continued",
-    parentJobId: source.parentJobId || source.id,
-    continuedFromJobId: source.id
-  };
-  db.jobs.push(job);
-  writeDb(db, "job_continued", { from: source.id, id: job.id });
-  res.json(hydrateJob(job, db));
-});
-
-app.get("/checklist-templates", (_req, res) => {
-  const db = readDb();
-  res.json(db.checklistTemplates || CHECKLISTS);
-});
-
-app.post("/checklist-templates", (req, res) => {
-  const db = readDb();
-  const serviceKey = cleanString(req.body.serviceKey);
-  const items = Array.isArray(req.body.items) ? req.body.items.map(cleanString).filter(Boolean) : [];
-  if (!serviceKey) return res.status(400).json({ error: "serviceKey required" });
-  db.checklistTemplates ||= {};
-  db.checklistTemplates[serviceKey] = items;
-  writeDb(db, "checklist_template_updated", { serviceKey });
-  res.json({ serviceKey, items });
-});
-
-app.post("/inventory/purchases", (req, res) => {
-  const db = readDb();
-  const p = {
-    id: nextNumericId(db.inventoryPurchases || []),
-    itemKey: cleanString(req.body.itemKey),
-    itemName: cleanString(req.body.itemName),
-    quantity: Number(req.body.quantity || 0),
-    unit: cleanString(req.body.unit),
-    vendor: cleanString(req.body.vendor),
-    cost: Number(req.body.cost || 0),
-    purchasedBy: cleanString(req.body.purchasedBy),
-    purchaseDate: cleanString(req.body.purchaseDate) || todayString(),
-    createdAt: new Date().toISOString()
-  };
-  db.inventoryPurchases ||= [];
-  db.inventoryPurchases.push(p);
-  const item = db.inventory.find(i => i.key === p.itemKey || i.name === p.itemName);
-  if (item && item.quantity != null) item.quantity = Number(item.quantity || 0) + p.quantity;
-  writeDb(db, "inventory_purchase_added", { id: p.id });
-  res.json(p);
-});
-
-app.get("/inventory/usage-report", (req, res) => {
-  const db = readDb();
-  const range = req.query.range || "monthly";
-  const now = new Date();
-  const start = new Date(now);
-  start.setDate(now.getDate() - (range === "biweekly" ? 14 : 30));
-  const startStr = start.toISOString().slice(0,10);
-  const usage = {};
-  for (const job of db.jobs || []) {
-    if ((job.serviceDate || "") < startStr) continue;
-    for (const s of job.services || []) {
-      for (const row of materialsBreakdown(s)) {
-        usage[row.key] ||= { key: row.key, label: row.label, qty: 0, total: 0, jobs: 0 };
-        usage[row.key].qty += Number(row.qty || 0);
-        usage[row.key].total += Number(row.total || 0);
-        usage[row.key].jobs += 1;
-      }
-    }
-  }
-  res.json({ range, startDate: startStr, endDate: todayString(), rows: Object.values(usage).map(x => ({ ...x, qty: Number(x.qty.toFixed(2)), total: Number(x.total.toFixed(2)) })) });
-});
-
-app.post("/quickbooks/refresh-token", async (_req, res) => {
-  const db = readDb();
-  try {
-    await qbRefreshIfNeeded(db);
-    writeDb(db, "quickbooks_refreshed");
-    res.json({ ok: true, connected: true, lastConnectedAt: db.settings.quickbooks.lastConnectedAt });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-/* ---------- FULL V4 MAPS / ROUTES / RECURRING / INVENTORY ---------- */
-
-app.get("/maps/config", (_req, res) => {
-  res.json({ apiKey: process.env.GOOGLE_MAPS_API_KEY || "" });
-});
-
-app.post("/maps/reverse-geocode", async (req, res) => {
-  const geo = await normalizeGeoWithAddress(req.body.geo || req.body);
-  res.json({ geo, address: geo?.formattedAddress || "" });
-});
-
-app.get("/route-history", (req, res) => {
-  const db = readDb();
-  const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
-  const employeeId = req.query.employeeId ? String(req.query.employeeId) : null;
-  const jobId = req.query.jobId ? String(req.query.jobId) : null;
-  let rows = db.routeEvents || [];
-  rows = rows.filter(e => !date || e.date === date || String(e.createdAt || "").slice(0,10) === date);
-  if (employeeId) rows = rows.filter(e => String(e.employeeId) === employeeId);
-  if (jobId) rows = rows.filter(e => String(e.jobId) === jobId);
-  rows.sort((a,b) => String(a.createdAt || "").localeCompare(String(b.createdAt || "")));
-  res.json(rows);
-});
-
-function addDays(dateStr, days) {
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setDate(d.getDate() + Number(days || 0));
-  return d.toISOString().slice(0,10);
-}
-
-function nextRecurringDate(fromDate, rule = {}) {
-  const type = rule.type || "weekly";
-  if (type === "biweekly") return addDays(fromDate, 14);
-  if (type === "monthly") {
-    const d = new Date(`${fromDate}T00:00:00`);
-    d.setMonth(d.getMonth() + 1);
-    return d.toISOString().slice(0,10);
-  }
-  if (type === "custom_days") return addDays(fromDate, Number(rule.intervalDays || 7));
-  return addDays(fromDate, 7);
-}
-
-app.get("/recurring-jobs", (_req, res) => {
-  const db = readDb();
-  res.json(db.recurringJobs || []);
-});
-
-app.post("/recurring-jobs", (req, res) => {
-  const db = readDb();
-  const startDate = cleanString(req.body.startDate) || db.dailySetup.date || todayString();
-  const rec = {
-    id: nextNumericId(db.recurringJobs || []),
-    contractorId: req.body.contractorId == null ? null : String(req.body.contractorId),
-    serviceAddress: cleanString(req.body.serviceAddress),
-    notes: cleanString(req.body.notes),
-    services: Array.isArray(req.body.services) ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize)) : [],
-    rule: req.body.rule || { type: "weekly" },
-    active: true,
-    nextDate: startDate,
-    createdAt: new Date().toISOString()
-  };
-  db.recurringJobs ||= [];
-  db.recurringJobs.push(rec);
-  writeDb(db, "recurring_job_added", { id: rec.id });
-  res.json(rec);
-});
-
-app.post("/recurring-jobs/generate", (req, res) => {
-  const db = readDb();
-  const throughDate = cleanString(req.body.throughDate) || addDays(todayString(), 30);
-  const created = [];
-  for (const rec of db.recurringJobs || []) {
-    if (rec.active === false) continue;
-    let nextDate = rec.nextDate || todayString();
-    let guard = 0;
-    while (nextDate <= throughDate && guard < 80) {
-      const exists = db.jobs.some(j => String(j.recurringJobId || "") === String(rec.id) && j.serviceDate === nextDate && !j.deletedAt);
-      if (!exists) {
-        const job = {
-          id: nextNumericId(db.jobs),
-          contractorId: rec.contractorId,
-          serviceAddress: rec.serviceAddress || "",
-          serviceDate: nextDate,
-          notes: rec.notes || "",
-          createdAt: new Date().toISOString(),
-          services: (rec.services || []).map(s => normalizeService(s, db.dailySetup.crewSize)),
-          photos: [],
-          sortOrder: nextSortOrderForDate(db, nextDate),
-          deletedAt: null,
-          archivedAt: null,
-          finishedAt: null,
-          quickbooksStatus: "not_sent",
-          quickbooksInvoiceId: null,
-          openStatus: "single_day",
-          recurringJobId: rec.id
-        };
-        db.jobs.push(job);
-        created.push(job.id);
-      }
-      nextDate = nextRecurringDate(nextDate, rec.rule || {});
-      guard++;
-    }
-    rec.nextDate = nextDate;
-  }
-  writeDb(db, "recurring_jobs_generated", { created });
-  res.json({ ok: true, created });
-});
-
-app.post("/jobs/:id/continue", (req, res) => {
-  const db = readDb();
-  const source = db.jobs.find(j => String(j.id) === String(req.params.id));
-  if (!source) return res.status(404).json({ error: "Job not found" });
-  const serviceDate = cleanString(req.body.serviceDate) || addDays(source.serviceDate || todayString(), 1);
-  source.openStatus = "open";
-  const job = {
-    ...cloneDb(source),
-    id: nextNumericId(db.jobs),
-    serviceDate,
-    createdAt: new Date().toISOString(),
-    services: (source.services || []).map(s => normalizeService({ ...s, startTime:null, endTime:null, onMyWayTime:null, arrivedTime:null, actionGeo:{} }, db.dailySetup.crewSize)),
-    photos: [],
-    sortOrder: nextSortOrderForDate(db, serviceDate),
-    finishedAt: null,
-    archivedAt: null,
-    deletedAt: null,
-    quickbooksStatus: "not_sent",
-    quickbooksInvoiceId: null,
-    openStatus: "continued",
-    parentJobId: source.parentJobId || source.id,
-    continuedFromJobId: source.id
-  };
-  db.jobs.push(job);
-  writeDb(db, "job_continued", { from: source.id, id: job.id });
-  res.json(hydrateJob(job, db));
-});
-
-app.get("/checklist-templates", (_req, res) => {
-  const db = readDb();
-  res.json(db.checklistTemplates || CHECKLISTS);
-});
-
-app.post("/checklist-templates", (req, res) => {
-  const db = readDb();
-  const serviceKey = cleanString(req.body.serviceKey);
-  const items = Array.isArray(req.body.items) ? req.body.items.map(cleanString).filter(Boolean) : [];
-  if (!serviceKey) return res.status(400).json({ error: "serviceKey required" });
-  db.checklistTemplates ||= {};
-  db.checklistTemplates[serviceKey] = items;
-  writeDb(db, "checklist_template_updated", { serviceKey });
-  res.json({ serviceKey, items });
-});
-
-app.post("/inventory/purchases", (req, res) => {
-  const db = readDb();
-  const p = {
-    id: nextNumericId(db.inventoryPurchases || []),
-    itemKey: cleanString(req.body.itemKey),
-    itemName: cleanString(req.body.itemName),
-    quantity: Number(req.body.quantity || 0),
-    unit: cleanString(req.body.unit),
-    vendor: cleanString(req.body.vendor),
-    cost: Number(req.body.cost || 0),
-    purchasedBy: cleanString(req.body.purchasedBy),
-    purchaseDate: cleanString(req.body.purchaseDate) || todayString(),
-    createdAt: new Date().toISOString()
-  };
-  db.inventoryPurchases ||= [];
-  db.inventoryPurchases.push(p);
-  const item = db.inventory.find(i => i.key === p.itemKey || i.name === p.itemName);
-  if (item && item.quantity != null) item.quantity = Number(item.quantity || 0) + p.quantity;
-  writeDb(db, "inventory_purchase_added", { id: p.id });
-  res.json(p);
-});
-
-app.get("/inventory/usage-report", (req, res) => {
-  const db = readDb();
-  const range = req.query.range || "monthly";
-  const now = new Date();
-  const start = new Date(now);
-  start.setDate(now.getDate() - (range === "biweekly" ? 14 : 30));
-  const startStr = start.toISOString().slice(0,10);
-  const usage = {};
-  for (const job of db.jobs || []) {
-    if ((job.serviceDate || "") < startStr) continue;
-    for (const s of job.services || []) {
-      for (const row of materialsBreakdown(s)) {
-        usage[row.key] ||= { key: row.key, label: row.label, qty: 0, total: 0, jobs: 0 };
-        usage[row.key].qty += Number(row.qty || 0);
-        usage[row.key].total += Number(row.total || 0);
-        usage[row.key].jobs += 1;
-      }
-    }
-  }
-  res.json({ range, startDate: startStr, endDate: todayString(), rows: Object.values(usage).map(x => ({ ...x, qty: Number(x.qty.toFixed(2)), total: Number(x.total.toFixed(2)) })) });
-});
-
-app.post("/quickbooks/refresh-token", async (_req, res) => {
-  const db = readDb();
-  try {
-    await qbRefreshIfNeeded(db);
-    writeDb(db, "quickbooks_refreshed");
-    res.json({ ok: true, connected: true, lastConnectedAt: db.settings.quickbooks.lastConnectedAt });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
 
 initializeDatabaseBackedState()
   .then(() => {
