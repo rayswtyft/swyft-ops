@@ -3328,7 +3328,13 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
     }
 
     function initVisibleAddressAutocompletes(){
-      ["serviceAddress", "estimateAddress", "recurringAddress", "editAddress"].forEach(id => initAddressAutocomplete(id));
+      [
+  "serviceAddress",
+  "estimateAddress",
+  "recurringAddress",
+  "editAddress",
+  "billingAddress"
+].forEach(id => initAddressAutocomplete(id));
     }
 
     async function leaveJobOpen(jobId){
