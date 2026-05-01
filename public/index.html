@@ -886,15 +886,26 @@
 
 
 
-      <div class="row">
+ <div>
 
-  <input
-  id="serviceAddress"
-  type="text"
-  placeholder="Enter service address manually"
-  autocomplete="street-address"
-  style="background:#fff; pointer-events:auto;"
+<input
+id="serviceAddress"
+type="text"
+placeholder="Enter service address"
+autocomplete="off"
+autocorrect="off"
+spellcheck="false"
+style="background:#fff; pointer-events:auto;"
 />
+
+<select
+id="savedAddressSelect"
+class="hidden"
+>
+<option value="">Use saved service address</option>
+</select>
+
+</div>
 
 <select
   id="savedAddressSelect"
