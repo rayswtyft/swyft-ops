@@ -888,14 +888,20 @@
 
       <div class="row">
 
-        <input id="serviceAddress" placeholder="Service address" />
+  <input
+  id="serviceAddress"
+  type="text"
+  placeholder="Enter service address manually"
+  autocomplete="street-address"
+  style="background:#fff; pointer-events:auto;"
+/>
 
-        <select id="savedAddressSelect" onchange="applySavedAddress()">
-
-          <option value="">Use saved service address</option>
-
-        </select>
-
+<select
+  id="savedAddressSelect"
+  onchange="applySavedAddress()"
+>
+  <option value="">Use saved service address (optional)</option>
+</select>
       </div>
 
 
