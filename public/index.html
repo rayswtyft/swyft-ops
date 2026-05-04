@@ -1663,13 +1663,13 @@
 
       dailySetup = await res.json();
 
-      const setupDate = dailySetup.date || todayLocalDate();
+    const today = todayLocalDate();
 
-      $("dailyDate").value = todayLocalDate();
+$("dailyDate").value = today;
+$("dailyDate").disabled = true;
 
-      if (!$("managerDateMirror").value) $("managerDateMirror").value = setupDate;
-
-      if (!$("scheduleDate").value) $("scheduleDate").value = setupDate;
+$("managerDateMirror").value = today;
+$("scheduleDate").value = today;
 
     
 if (document.activeElement !== $("managerCrewSize")) {
