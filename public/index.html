@@ -334,20 +334,26 @@
 
     }
 
-  
-.modal-content{
-  width:100%;
-  max-width:1100px;
-  height:95vh;
-  max-height:95vh;
-  overflow-y:auto;
-  background:#fff;
-  border-radius:22px;
-  padding:20px;
-  color:var(--text);
-  box-shadow:var(--shadow);
-  -webkit-overflow-scrolling: touch;
-}
+    .modal-content{
+
+      width:min(1080px,100%);
+
+      max-height:92vh;
+
+      overflow:auto;
+
+      background:#fff;
+
+      border-radius:22px;
+
+      padding:18px;
+
+      color:var(--text);
+
+      box-shadow:var(--shadow);
+
+    }
+
     .photo-modal-content{
 
       width:auto;max-width:95vw;max-height:95vh;background:transparent;padding:0
@@ -432,33 +438,19 @@
 
     }
 
-   @media (max-width: 820px) {
-  .modal {
-    padding: 0;
-    align-items: stretch;
-    justify-content: stretch;
-  }
+    @media (max-width:820px){
 
-  .modal-content {
-    width: 100vw;
-    height: 100vh;
-    max-width: none;
-    max-height: none;
-    border-radius: 0;
-    padding: 16px;
-    overflow-y: auto;
-  }
+      .grid2,.row,.row3,.quick-actions,.login-grid,.modebar,.dashboard,.van-picture-buttons{grid-template-columns:1fr}
 
-  .service-card {
-    padding: 14px;
-  }
+      .container{padding:10px}
 
-  .row,
-  .row3,
-  .quick-actions {
-    grid-template-columns: 1fr;
-  }
-}
+      .card{padding:14px}
+
+      button,input,select,textarea{font-size:17px}
+
+      .mode-btn{min-height:70px}
+
+    }
 
     .ipad-safe .job-item,
 
@@ -894,35 +886,20 @@
 
 
 
-<div class="service-card">
-  <h3>Service Address</h3>
+      <div class="row">
 
-  <label>Google Maps Autofill</label>
   <input
-    id="googleAddress"
-    type="text"
-    placeholder="Start typing address..."
-    autocomplete="off"
-    autocorrect="off"
-    spellcheck="false"
-    style="background:#fff;"
-  />
+  id="serviceAddress"
+  type="text"
+  placeholder="Enter service address manually"
+  autocomplete="street-address"
+  style="background:#fff; pointer-events:auto;"
+/>
 
-  <label style="margin-top:12px;">Saved Contractor Addresses</label>
-  <select
-    id="savedAddressSelect"
-    onchange="applySavedAddress()"
-  >
-    <option value="">Use saved service address (optional)</option>
-  </select>
-
-  <label style="margin-top:12px;">Manual Override Address</label>
-  <input
-    id="manualAddress"
-    type="text"
-    placeholder="Manual address entry (if Google autofill fails)"
-  />
-</div>
+<select
+  id="savedAddressSelect"
+  onchange="applySavedAddress()"
+>
   <option value="">Use saved service address (optional)</option>
 </select>
       </div>
