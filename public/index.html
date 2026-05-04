@@ -1884,7 +1884,36 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
     function renderInventoryModalList(){
 
-      $("inventoryModalList").innerHTML = inventory.map(item => `
+function renderInventoryModalList(){
+  $("inventoryModalList").innerHTML = `
+    ${inventoryEditMode ? `
+      <div class="service-card">
+        <h3>Add Inventory Item</h3>
+
+        <input id="newInvName" placeholder="Item name" />
+
+        <select id="newInvCategory">
+          <option value="supply">Supply</option>
+          <option value="tool">Tool</option>
+        </select>
+
+        <select id="newInvLocation">
+          <option value="van">Van</option>
+          <option value="truck">Truck</option>
+          <option value="warehouse">Warehouse</option>
+        </select>
+
+        <input id="newInvQty" type="number" step="1" value="1" placeholder="Quantity" />
+
+        <input id="newInvUnit" value="pieces" placeholder="Unit" />
+
+        <input id="newInvReorder" type="number" step="1" placeholder="Reorder point" />
+
+        <button class="green" onclick="addInventoryItem()">Add Item</button>
+      </div>
+    ` : ``}
+
+    ${inventory.map(item => `
 
         <div class="inventory-row ${isInventoryLow(item) ? "low-stock" : ""}">
 
@@ -1955,7 +1984,30 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
     async function saveInventoryEdits(){
+async function addInventoryItem(){
+  const name = $("newInvName").value.trim();
 
+  if (!name) return alert("Enter item name");
+
+  await fetch("/inventory/add", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      name,
+      key: name.toLowerCase().replaceAll(" ", "_"),
+      category: $("newInvCategory").value,
+      location: $("newInvLocation").value,
+      quantity: Number($("newInvQty").value || 0),
+      unit: $("newInvUnit").value || "pieces",
+      reorderPoint: $("newInvReorder").value || null
+    })
+  });
+
+  await loadInventory();
+  renderLowStockList();
+
+  alert("Inventory item added");
+}
       for (const item of inventory) {
 
         const itemId = item.id || item.key;
