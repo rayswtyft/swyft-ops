@@ -1900,15 +1900,20 @@ app.post("/inventory/adjust", (req, res) => {
 app.post("/inventory/add", (req, res) => {
   const db = readDb();
 
-  const item = {
-    id: uuidv4(),
-    key: cleanString(req.body.key) || uuidv4(),
-    name: cleanString(req.body.name),
-    quantity: req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity),
-    unit: cleanString(req.body.unit) || "pieces",
-    reorderPoint: req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint),
-    active: true
-  };
+const item = {
+  id: uuidv4(),
+  key: cleanString(req.body.key) || uuidv4(),
+  name: cleanString(req.body.name),
+
+  category: cleanString(req.body.category) || "supply",
+  location: cleanString(req.body.location) || "van",
+
+  quantity: req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity),
+  unit: cleanString(req.body.unit) || "pieces",
+  reorderPoint: req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint),
+
+  active: true
+};
 
   db.inventory.push(item);
   writeDb(db, "inventory_added");
