@@ -1318,6 +1318,7 @@
     let dailySetup = { date: "", crewSize: 1, lunchMinutes: 0 };
     let checklistExpanded = localStorage.getItem("swyftChecklistExpanded") !== "false";
     let checklistSaving = false;
+    let lastChecklistTouch = 0;  // timestamp of last checklist interaction
 
     let selectedJobId = null;
 
@@ -1803,7 +1804,9 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       }
 
       // Don't re-render if user is actively interacting with checklist (prevents checkbox flicker)
-      if (!force && (checklistSaving || (document.activeElement && $("dailyChecklist").contains(document.activeElement)))) return;
+      // Also block for 10 seconds after any checklist touch (mobile checkboxes lose focus instantly)
+      const checklistRecentlyTouched = (Date.now() - lastChecklistTouch) < 10000;
+      if (!force && (checklistSaving || checklistRecentlyTouched || (document.activeElement && $("dailyChecklist").contains(document.activeElement)))) return;
 
       $("dailyChecklist").innerHTML = `
         <button class="secondary" onclick="toggleChecklistPanel()">${checklistExpanded ? "Hide Checklist" : "View Checklist"}</button>
@@ -3407,8 +3410,19 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
     function openDirections(address){
       if (!address) return alert("No service address found");
       const destination = encodeURIComponent(address);
-      const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
-      window.location.href = webUrl;
+      // Try native maps app first (works on iOS and Android), falls back to web
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const isAndroid = /Android/.test(navigator.userAgent);
+      if (isIOS) {
+        // Apple Maps native
+        window.open(`maps://?daddr=${destination}&dirflg=d`, "_blank");
+      } else if (isAndroid) {
+        // Google Maps native intent
+        window.open(`google.navigation:q=${destination}`, "_blank");
+      } else {
+        // Web fallback - opens in new tab so app isn't lost
+        window.open(`https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`, "_blank");
+      }
     }
 
     let googlePlacesScriptLoading = null;
@@ -3846,6 +3860,7 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
     }
 
    async function toggleChecklist(date, item, checked) {
+      lastChecklistTouch = Date.now();  // block auto-refresh from overwriting for 10s
       const el = event?.target?.closest(".check-row");
       if (el) el.classList.toggle("checked", checked);
       checklistSaving = true;
@@ -3860,8 +3875,8 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
         const allRows = document.querySelectorAll("#dailyChecklist .check-row");
         const checkedCount = Array.from(allRows).filter(r => r.classList.contains("checked")).length;
         $("checkMeta").innerText = `${checkedCount}/${allRows.length} checked`;
-        // Hold the save lock for 3 seconds after success so auto-refresh can't overwrite
-        setTimeout(() => { checklistSaving = false; }, 3000);
+        // Hold the save lock for 8 seconds after success
+        setTimeout(() => { checklistSaving = false; }, 8000);
       } catch (err) {
         if (el) el.classList.toggle("checked", !checked);
         const input = el?.querySelector('input[type="checkbox"]');
