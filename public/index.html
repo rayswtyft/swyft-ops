@@ -2556,7 +2556,7 @@ function applySavedAddress(){
          
 ${s.category === "Junk" && currentMode === "van" ? `
   <select onchange="${fnPrefix}(${i}, 'junkLoad', this.value)">
-    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label} - ${fmtMoney(o.price)}</option>`).join("")}
+    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label}</option>`).join("")}
   </select>
 ` : s.category === "Junk" ? `
   <div class="muted">Load amount will be selected in the Van App.</div>
@@ -3024,7 +3024,7 @@ $("manualAddress").value = "";
 
 ${s.category === "Junk" && currentMode === "van" ? `
   <select onchange="updateVanJunkLoad(${job.id}, ${i}, this.value)">
-    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label} - ${fmtMoney(o.price)}</option>`).join("")}
+    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label}</option>`).join("")}
   </select>
 ` : s.category === "Junk" ? `Load: ${s.junkLoad}` : ""}
               ${isConcrete(s) ? `Linear feet: ${s.linearFeet}` : ""}
