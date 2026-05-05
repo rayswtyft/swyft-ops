@@ -353,8 +353,6 @@ async function loadDbFromPostgres() {
     createdAt: c.created_at || null
   }));
 
-  const inventoryRes = await query(`SELECT * FROM inventory ORDER BY name`);
-
 const inventoryRes = await query(`SELECT * FROM inventory ORDER BY name`);
 db.inventory = inventoryRes.rows.map(i => ({
   id: i.id,
