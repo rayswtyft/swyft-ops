@@ -512,7 +512,19 @@
     .pac-matched {
       font-weight: 700;
     }
-</style>
+
+    .inv-tab{
+      background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;
+      border-radius:20px;padding:8px 16px;font-size:14px;font-weight:600;cursor:pointer;
+    }
+    .inv-tab.active{background:#1e3a5f;color:#fff;border-color:#1e3a5f;}
+    .low-badge{
+      display:inline-block;background:#dc2626;color:#fff;
+      border-radius:10px;font-size:11px;padding:1px 6px;margin-left:4px;
+    }
+    .inventory-topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
+
+    </style>
 
 </head>
 
@@ -1131,35 +1143,74 @@
 
 
   <div id="inventoryModal" class="modal hidden">
-
     <div class="modal-content">
-
       <div class="inventory-topbar">
-
         <div>
-
-          <h2>Inventory</h2>
-
-          <div class="muted">View all inventory. Editing is off until you choose Edit Inventory.</div>
-
+          <h2>📦 Inventory</h2>
+          <div class="muted" id="invLowBadge"></div>
         </div>
-
         <div class="sync-line">
-
-          <button id="inventoryEditBtn" class="secondary" style="width:auto;" onclick="toggleInventoryEdit()">Edit Inventory</button>
-
-          <button id="inventorySaveBtn" class="green hidden" style="width:auto;" onclick="saveInventoryEdits()">Save Changes</button>
-
+          <button id="invAddBtn" class="secondary hidden" style="width:auto;" onclick="showAddInventoryForm()">+ Add Item</button>
+          <button id="inventoryEditBtn" class="secondary" style="width:auto;" onclick="toggleInventoryEdit()">Edit</button>
           <button class="secondary" style="width:auto;" onclick="closeInventoryModal()">Close</button>
-
         </div>
+      </div>
 
+      <!-- Location Tabs -->
+      <div style="display:flex;gap:8px;margin:12px 0;">
+        <button id="invTab-all" class="inv-tab active" onclick="setInvTab('all')">All</button>
+        <button id="invTab-van" class="inv-tab" onclick="setInvTab('van')">🚐 Van <span id="invLow-van" class="low-badge hidden"></span></button>
+        <button id="invTab-truck" class="inv-tab" onclick="setInvTab('truck')">🚛 Truck <span id="invLow-truck" class="low-badge hidden"></span></button>
+        <button id="invTab-warehouse" class="inv-tab" onclick="setInvTab('warehouse')">🏭 Warehouse <span id="invLow-warehouse" class="low-badge hidden"></span></button>
+      </div>
+
+      <!-- Add Item Form (hidden by default) -->
+      <div id="invAddForm" class="service-card hidden">
+        <h3>Add Inventory Item</h3>
+        <input id="newInvName" placeholder="Item name" />
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <select id="newInvCategory" style="flex:1;min-width:120px;">
+            <option value="supply">Supply</option>
+            <option value="tool">Tool</option>
+            <option value="equipment">Equipment</option>
+          </select>
+          <select id="newInvLocation" style="flex:1;min-width:120px;">
+            <option value="van">Van</option>
+            <option value="truck">Truck</option>
+            <option value="warehouse">Warehouse</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <input id="newInvQty" type="number" step="1" value="" placeholder="Qty (blank = not tracked)" style="flex:1;min-width:80px;" />
+          <input id="newInvUnit" value="pieces" placeholder="Unit" style="flex:1;min-width:80px;" />
+          <input id="newInvReorder" type="number" step="1" placeholder="Reorder at" style="flex:1;min-width:80px;" />
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="green" onclick="addInventoryItem()">Add Item</button>
+          <button class="secondary" onclick="hideAddInventoryForm()">Cancel</button>
+        </div>
       </div>
 
       <div id="inventoryModalList"></div>
-
     </div>
+  </div>
 
+  <!-- Inventory Adjust Modal (quick +/-) -->
+  <div id="invAdjustModal" class="modal hidden">
+    <div class="modal-content" style="max-width:340px;">
+      <h2 id="invAdjTitle">Adjust Stock</h2>
+      <div class="muted" id="invAdjCurrent"></div>
+      <div style="display:flex;gap:12px;align-items:center;justify-content:center;margin:20px 0;">
+        <button class="orange" style="font-size:28px;width:56px;height:56px;border-radius:50%;padding:0;" onclick="invAdjStep(-1)">−</button>
+        <input id="invAdjQty" type="number" step="1" value="1" style="width:80px;text-align:center;font-size:24px;font-weight:700;" />
+        <button class="green" style="font-size:28px;width:56px;height:56px;border-radius:50%;padding:0;" onclick="invAdjStep(1)">+</button>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="red" style="flex:1;" onclick="commitInvAdj(-1)">Remove</button>
+        <button class="green" style="flex:1;" onclick="commitInvAdj(1)">Add</button>
+        <button class="secondary" style="flex:1;" onclick="closeInvAdjModal()">Cancel</button>
+      </div>
+    </div>
   </div>
 
 
@@ -1879,194 +1930,234 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
     function isInventoryLow(item){
-
       if (item.low) return true;
-
-      if (item.displayReorderPoint === null || item.displayReorderPoint === undefined) return false;
-
-      if (item.displayQuantity === null || item.displayQuantity === undefined) return false;
-
+      if (item.displayReorderPoint == null) return false;
+      if (item.displayQuantity == null) return false;
       return Number(item.displayQuantity) <= Number(item.displayReorderPoint);
-
     }
-
-
 
     function renderLowStockList(){
-
       const low = inventory.filter(isInventoryLow);
-
       if (!low.length) {
-
-        $("lowStockList").innerHTML = `<div class="muted">No low-stock items.</div>`;
-
+        const el = document.getElementById("lowStockList");
+        if (el) el.innerHTML = `<div class="muted">No low-stock items.</div>`;
         return;
-
       }
-
-
-
-      $("lowStockList").innerHTML = `
-
+      const el = document.getElementById("lowStockList");
+      if (el) el.innerHTML = `
         <div class="alert-row low-stock">
-
           <strong>Low stock alerts</strong>
-
           ${low.map(item => `
-
             <div class="muted" style="margin-top:8px;">
-
-              ${item.name} — ${item.displayUnit ? `${item.displayQuantity} ${item.displayUnit}` : `${item.quantity} ${item.unit}`}
-
+              ${item.name} — ${item.displayUnit ? item.displayQuantity+' '+item.displayUnit : item.quantity+' '+item.unit}
             </div>
-
           `).join("")}
-
         </div>
-
       `;
-
     }
-function renderInventoryModalList(){
-  $("inventoryModalList").innerHTML = `
-    ${inventoryEditMode ? `
-      <div class="service-card">
-        <h3>Add Inventory Item</h3>
-        <input id="newInvName" placeholder="Item name" />
-        <select id="newInvCategory">
-          <option value="supply">Supply</option>
-          <option value="tool">Tool</option>
-        </select>
-        <select id="newInvLocation">
-          <option value="van">Van</option>
-          <option value="truck">Truck</option>
-          <option value="warehouse">Warehouse</option>
-        </select>
-        <input id="newInvQty" type="number" step="1" value="1" placeholder="Quantity" />
-        <input id="newInvUnit" value="pieces" placeholder="Unit" />
-        <input id="newInvReorder" type="number" step="1" placeholder="Reorder point" />
-        <button class="green" onclick="addInventoryItem()">Add Item</button>
-      </div>
-    ` : ``}
 
-    ${inventory.map(item => `
-      <div class="inventory-row ${isInventoryLow(item) ? "low-stock" : ""}">
-        <strong>${item.name}</strong>
-        <div class="muted">
-          ${item.displayUnit ? `${item.displayQuantity} ${item.displayUnit}` : `${item.quantity} ${item.unit}`}
-        </div>
-        ${inventoryEditMode ? `
-          <div class="row" style="margin-top:8px;">
-           <input id="inv-${item.id || item.key}" type="number" step="0.25" value="${item.quantity}" />
+    // ---- INVENTORY REDESIGN ----
+    let invTab = "all";
+    let invEditMode = false;
+    let invAdjTarget = null;
 
-<select id="inv-location-${item.id || item.key}">
-  <option value="van" ${item.location === "van" ? "selected" : ""}>Van</option>
-  <option value="truck" ${item.location === "truck" ? "selected" : ""}>Truck</option>
-  <option value="warehouse" ${item.location === "warehouse" ? "selected" : ""}>Warehouse</option>
-</select>
-          </div>
-        ` : ``}
-      </div>
-    `).join("")}
-  `;
-
-  $("inventorySaveBtn").classList.toggle("hidden", !inventoryEditMode);
-  $("inventoryEditBtn").innerText = inventoryEditMode ? "Cancel Edit" : "Edit Inventory";
-}
-
-    function openInventoryModal(){
-
-      inventoryEditMode = false;
-
+    function setInvTab(tab) {
+      invTab = tab;
+      ["all","van","truck","warehouse"].forEach(t => {
+        document.getElementById("invTab-"+t)?.classList.toggle("active", t === tab);
+      });
       renderInventoryModalList();
-
-      $("inventoryModal").classList.remove("hidden");
-
     }
 
-
-
-    function closeInventoryModal(){
-
-      $("inventoryModal").classList.add("hidden");
-
+    function filteredInventory() {
+      if (invTab === "all") return inventory;
+      return inventory.filter(i => (i.location || "van") === invTab);
     }
 
+    function renderInventoryModalList() {
+      const items = filteredInventory();
+      ["van","truck","warehouse"].forEach(loc => {
+        const badge = document.getElementById("invLow-"+loc);
+        if (!badge) return;
+        const cnt = inventory.filter(i => (i.location||"van")===loc && isInventoryLow(i)).length;
+        badge.textContent = cnt;
+        badge.classList.toggle("hidden", cnt === 0);
+      });
+      const totalLow = inventory.filter(i => isInventoryLow(i)).length;
+      const lb = document.getElementById("invLowBadge");
+      if (lb) { lb.textContent = totalLow > 0 ? "⚠️ "+totalLow+" item"+(totalLow>1?"s":"")+" low on stock" : ""; lb.style.color = totalLow > 0 ? "#dc2626" : ""; }
+      const listEl = document.getElementById("inventoryModalList");
+      if (!listEl) return;
+      if (!items.length) { listEl.innerHTML = `<div class="muted" style="margin-top:16px;">No items in this location.</div>`; return; }
+      listEl.innerHTML = items.map(item => {
+        const isLow = isInventoryLow(item);
+        const qty = item.displayQuantity ?? item.quantity;
+        const unit = item.displayUnit || item.unit || "";
+        const hasQty = item.quantity != null;
+        return `<div class="inventory-row ${isLow ? "low-stock" : ""}" style="margin-bottom:10px;">
+          ${invEditMode ? `
+            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+              <input value="${item.name}" id="inv-name-${item.id}" style="flex:2;min-width:120px;" />
+              <select id="inv-loc-${item.id}" style="flex:1;min-width:100px;">
+                <option value="van" ${(item.location||"van")==="van"?"selected":""}>Van</option>
+                <option value="truck" ${item.location==="truck"?"selected":""}>Truck</option>
+                <option value="warehouse" ${item.location==="warehouse"?"selected":""}>Warehouse</option>
+              </select>
+              <input type="number" step="0.25" value="${item.quantity??""}" id="inv-qty-${item.id}" placeholder="Qty" style="width:70px;" />
+              <input value="${item.unit||""}" id="inv-unit-${item.id}" placeholder="Unit" style="width:70px;" />
+              <input type="number" step="1" value="${item.reorderPoint??""}" id="inv-reorder-${item.id}" placeholder="Reorder at" style="width:80px;" />
+              <button class="red" style="width:auto;padding:6px 10px;" onclick="deactivateInventoryItem(${JSON.stringify(item.id)})">Remove</button>
+            </div>
+          ` : `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <div>
+                <strong style="${isLow?"color:#dc2626":""}">${isLow ? "⚠️ " : ""}${item.name}</strong>
+                <div class="muted" style="font-size:13px;">${item.location||"van"}${item.category ? " · "+item.category : ""}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;">
+                ${hasQty ? `<span style="font-weight:700;font-size:18px;${isLow?"color:#dc2626":""}">${qty}</span><span class="muted">${unit}</span><button class="secondary" style="width:auto;padding:6px 14px;font-size:20px;" onclick="openInvAdj(${JSON.stringify({id:item.id,name:item.name,quantity:item.quantity,unit:item.unit})})">±</button>` : `<span class="muted">not tracked</span>`}
+              </div>
+            </div>
+          `}
+        </div>`;
+      }).join("");
+    }
 
-
-    function toggleInventoryEdit(){
-
-      inventoryEditMode = !inventoryEditMode;
-
+    function openInventoryModal() {
+      invEditMode = false;
+      invTab = "all";
+      ["all","van","truck","warehouse"].forEach(t => {
+        document.getElementById("invTab-"+t)?.classList.toggle("active", t === "all");
+      });
+      document.getElementById("invAddForm")?.classList.add("hidden");
+      document.getElementById("invAddBtn")?.classList.add("hidden");
       renderInventoryModalList();
-
+      document.getElementById("inventoryModal").classList.remove("hidden");
     }
 
+    function closeInventoryModal() { document.getElementById("inventoryModal").classList.add("hidden"); }
 
+    function toggleInventoryEdit() {
+      invEditMode = !invEditMode;
+      const btn = document.getElementById("inventoryEditBtn");
+      if (btn) btn.innerText = invEditMode ? "Done Editing" : "Edit";
+      document.getElementById("invAddBtn")?.classList.toggle("hidden", !invEditMode);
+      if (!invEditMode) saveAllInventoryEdits();
+      else renderInventoryModalList();
+    }
 
-    async function addInventoryItem(){
-      const name = $("newInvName").value.trim();
+    async function saveAllInventoryEdits() {
+      const saves = inventory.map(async item => {
+        const nameEl = document.getElementById("inv-name-"+item.id);
+        if (!nameEl) return;
+        const qtyEl = document.getElementById("inv-qty-"+item.id);
+        const unitEl = document.getElementById("inv-unit-"+item.id);
+        const reorderEl = document.getElementById("inv-reorder-"+item.id);
+        const locEl = document.getElementById("inv-loc-"+item.id);
+        await fetch("/inventory/"+item.id, {
+          method: "PUT",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({
+            name: nameEl.value.trim() || item.name,
+            quantity: qtyEl?.value === "" ? null : Number(qtyEl?.value),
+            unit: unitEl?.value.trim() || item.unit,
+            reorderPoint: reorderEl?.value === "" ? null : Number(reorderEl?.value),
+            location: locEl?.value || item.location || "van",
+            category: item.category || "supply",
+            active: true
+          })
+        });
+      });
+      await Promise.all(saves);
+      await loadInventory();
+      renderInventoryModalList();
+    }
+
+    function showAddInventoryForm() { document.getElementById("invAddForm")?.classList.remove("hidden"); }
+    function hideAddInventoryForm() { document.getElementById("invAddForm")?.classList.add("hidden"); }
+
+    async function addInventoryItem() {
+      const name = document.getElementById("newInvName")?.value.trim();
       if (!name) return alert("Enter item name");
-      const qty = Number($("newInvQty")?.value || 1);
-      const unit = $("newInvUnit")?.value?.trim() || "pieces";
-      const category = $("newInvCategory")?.value || "supply";
-      const location = $("newInvLocation")?.value || "van";
-      const reorderPoint = Number($("newInvReorder")?.value || 0);
+      const qtyVal = document.getElementById("newInvQty")?.value;
       await fetch("/inventory/add", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, quantity: qty, unit, category, location, reorderPoint, active: true })
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          name,
+          category: document.getElementById("newInvCategory")?.value || "supply",
+          location: document.getElementById("newInvLocation")?.value || "van",
+          quantity: qtyVal === "" ? null : Number(qtyVal),
+          unit: document.getElementById("newInvUnit")?.value || "pieces",
+          reorderPoint: (document.getElementById("newInvReorder")?.value || "") === "" ? null : Number(document.getElementById("newInvReorder")?.value)
+        })
+      });
+      document.getElementById("newInvName").value = "";
+      document.getElementById("newInvQty").value = "";
+      document.getElementById("newInvReorder").value = "";
+      hideAddInventoryForm();
+      await loadInventory();
+      renderInventoryModalList();
+    }
+
+    async function deactivateInventoryItem(id) {
+      if (!confirm("Remove this item from inventory?")) return;
+      await fetch("/inventory/"+id, {
+        method: "PUT",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ active: false })
       });
       await loadInventory();
-      renderLowStockList();
-      alert("Item added");
+      renderInventoryModalList();
     }
 
-    async function saveInventoryEdits(){
-      for (const item of inventory) {
-
-        const itemId = item.id || item.key;
-
-        const el = $(`inv-${itemId}`);
-
-        if (!el) continue;
-
-        const quantity = Number(el.value || 0);
-
-        await fetch(`/inventory/${itemId}`, {
-
-          method:"PUT",
-
-          headers:{ "Content-Type":"application/json" },
-
-          body: JSON.stringify({
-
-            name: item.name,
-
-            quantity,
-
-            unit: item.unit,
-
-            reorderPoint: item.reorderPoint,
-
-            active: item.active !== false
-
-          })
-
-        });
-
-      }
-
-      inventoryEditMode = false;
-
-      await loadInventory();
-
+    async function loadInventory() {
+      const res = await fetch("/inventory");
+      const data = await res.json();
+      inventory = Array.isArray(data) ? data : (data.items || []);
+      renderInventoryModalList();
       renderLowStockList();
-
-      alert("Inventory updated");
-
     }
 
+    // Quick Adjust Modal
+    function openInvAdj(item) {
+      invAdjTarget = item;
+      const titleEl = document.getElementById("invAdjTitle");
+      const currEl = document.getElementById("invAdjCurrent");
+      const qtyEl = document.getElementById("invAdjQty");
+      if (titleEl) titleEl.textContent = item.name;
+      if (currEl) currEl.textContent = "Current stock: "+item.quantity+" "+(item.unit||"");
+      if (qtyEl) qtyEl.value = "1";
+      document.getElementById("invAdjustModal").classList.remove("hidden");
+    }
+
+    function closeInvAdjModal() {
+      document.getElementById("invAdjustModal").classList.add("hidden");
+      invAdjTarget = null;
+    }
+
+    function invAdjStep(dir) {
+      const el = document.getElementById("invAdjQty");
+      if (el) el.value = Math.max(1, Number(el.value || 1) + dir);
+    }
+
+    async function commitInvAdj(direction) {
+      if (!invAdjTarget) return;
+      const delta = Number(document.getElementById("invAdjQty").value || 1) * direction;
+      const res = await fetch("/inventory/adjust", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ id: invAdjTarget.id, delta })
+      });
+      if (res.ok) {
+        closeInvAdjModal();
+        await loadInventory();
+        renderInventoryModalList();
+      } else { alert("Adjust failed. Try again."); }
+    }
+
+    // Legacy aliases
+    function saveInventoryEdits() { saveAllInventoryEdits(); }
 
 
     async function loadEstimates(){
