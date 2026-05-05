@@ -3797,75 +3797,73 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       }
     }
 
-    let googlePlacesScriptLoading = null;
-    function loadGooglePlacesScript(){
+    // ===== GOOGLE MAPS AUTOCOMPLETE (clean rewrite) =====
+    let _mapsReady = false;
+    let _mapsLoadPromise = null;
+
+    function loadGooglePlacesScript() {
       if (!googleMapsApiKey) return Promise.resolve(false);
-      if (window.google?.maps?.places) return Promise.resolve(true);
-      if (googlePlacesScriptLoading) return googlePlacesScriptLoading;
-      googlePlacesScriptLoading = new Promise(resolve => {
-        // Only remove old scripts if google isn't already loaded
-        if (!window.google?.maps) {
-          document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
+      if (_mapsReady && window.google?.maps?.places) return Promise.resolve(true);
+      if (_mapsLoadPromise) return _mapsLoadPromise;
+
+      _mapsLoadPromise = new Promise((resolve) => {
+        // If already loaded somehow, just use it
+        if (window.google?.maps?.places) {
+          _mapsReady = true;
+          return resolve(true);
         }
-        const callbackName = "__gmpsCb_" + Date.now();
-        window[callbackName] = function() {
-          // Callback fires when Maps JS is fully ready
-          setTimeout(() => resolve(true), 50);
+
+        // Remove any stale/broken Maps scripts
+        document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
+
+        const cbName = "_gmapsReady_" + Date.now();
+        window[cbName] = () => {
+          _mapsReady = true;
+          resolve(true);
         };
-        const script = document.createElement("script");
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=${callbackName}`;
-        script.async = true;
-        script.defer = true;
-        script.onerror = (e) => {
-          console.warn("Google Maps script failed to load:", e);
-          googlePlacesScriptLoading = null;
+
+        const s = document.createElement("script");
+        s.src = "https://maps.googleapis.com/maps/api/js?key=" + googleMapsApiKey + "&libraries=places&loading=async&callback=" + cbName;
+        s.async = true;
+        s.onerror = () => {
+          _mapsLoadPromise = null;
           resolve(false);
         };
-        document.head.appendChild(script);
+        document.head.appendChild(s);
       });
-      return googlePlacesScriptLoading;
+
+      return _mapsLoadPromise;
     }
 
-    async function initAddressAutocomplete(inputId){
-      const input = $(inputId);
-      if (!input || input.dataset.autocompleteReady === "1") return;
-      const loaded = await loadGooglePlacesScript();
-      if (!loaded) return;
-      // Wait up to 3s for google.maps.places to be available
-      let attempts = 0;
-      while (!window.google?.maps?.places && attempts < 30) {
-        await new Promise(r => setTimeout(r, 100));
-        attempts++;
-      }
-      if (!window.google?.maps?.places) {
-        console.warn("Google Maps Places not available for", inputId);
-        return;
-      }
+    async function initAddressAutocomplete(inputId) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      if (input.dataset.acReady === "1") return;
+
+      const ok = await loadGooglePlacesScript();
+      if (!ok || !window.google?.maps?.places) return;
+
       try {
-        const autocomplete = new google.maps.places.Autocomplete(input, {
+        const ac = new google.maps.places.Autocomplete(input, {
           types: ["address"],
           componentRestrictions: { country: "us" },
-          fields: ["formatted_address", "name", "geometry"]
+          fields: ["formatted_address", "geometry"]
         });
-        autocomplete.addListener("place_changed", () => {
-          const place = autocomplete.getPlace();
+        ac.addListener("place_changed", () => {
+          const place = ac.getPlace();
           if (place?.formatted_address) input.value = place.formatted_address;
         });
-        input.dataset.autocompleteReady = "1";
-      } catch(e) {
-        console.warn("Autocomplete init error:", e);
+        input.dataset.acReady = "1";
+      } catch (e) {
+        console.warn("Autocomplete init failed:", inputId, e);
       }
     }
 
-    function initVisibleAddressAutocompletes(){
-     [
-  "googleAddress",
-  "estimateAddress",
-  "recurringAddress",
-  "editAddress",
-  "billingAddress"
-].forEach(id => initAddressAutocomplete(id));
+    function initVisibleAddressAutocompletes() {
+      ["googleAddress", "estimateAddress", "recurringAddress", "editAddress", "billingAddress"]
+        .forEach(id => initAddressAutocomplete(id));
     }
+    // ===== END MAPS =====
 
     async function leaveJobOpen(jobId){
       const res = await fetch(`/jobs/${jobId}/leave-open`, { method:"POST" });
