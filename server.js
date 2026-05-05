@@ -504,6 +504,57 @@ async function upsertChecklistState(date, itemName, checked) {
   );
 }
 
+async function upsertJob(client_or_query_fn, job) {
+  const q = typeof client_or_query_fn === 'function' ? client_or_query_fn : (sql, params) => client_or_query_fn.query(sql, params);
+  await q(
+    `INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+     ON CONFLICT (id) DO UPDATE SET contractor_id=$2, service_address=$3, service_date=$4, notes=$5, sort_order=$7, deleted_at=$8, archived_at=$9, finished_at=$10, quickbooks_status=$11, quickbooks_invoice_id=$12, from_estimate_id=$13, open_status=$14`,
+    [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day"]
+  );
+  // Delete and re-insert services for this job
+  await q(`DELETE FROM job_services WHERE job_id=$1`, [String(job.id)]);
+  let idx = 0;
+  for (const s of job.services || []) {
+    await q(
+      `INSERT INTO job_services (job_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+      [String(job.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
+    );
+  }
+}
+
+async function upsertContractor(c) {
+  await query(
+    `INSERT INTO contractors (id, company_name, contact_name, email, phone, billing_address, payment_terms, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+     ON CONFLICT (id) DO UPDATE SET company_name=$2, contact_name=$3, email=$4, phone=$5, billing_address=$6, payment_terms=$7`,
+    [String(c.id), c.companyName || "", c.contactName || "", c.email || "", c.phone || "", c.billingAddress || "", c.paymentTerms || "", c.createdAt || new Date().toISOString()]
+  );
+  await query(`DELETE FROM contractor_addresses WHERE contractor_id=$1`, [String(c.id)]);
+  for (const addr of c.serviceAddresses || []) {
+    await query(`INSERT INTO contractor_addresses (contractor_id, address) VALUES ($1,$2)`, [String(c.id), addr]);
+  }
+}
+
+async function upsertEstimate(estimate) {
+  await query(
+    `INSERT INTO estimates (id, contractor_id, service_address, notes, status, created_at, converted_job_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7)
+     ON CONFLICT (id) DO UPDATE SET contractor_id=$2, service_address=$3, notes=$4, status=$5, converted_job_id=$7`,
+    [String(estimate.id), estimate.contractorId == null ? null : String(estimate.contractorId), estimate.serviceAddress || "", estimate.notes || "", estimate.status || "open", estimate.createdAt || new Date().toISOString(), estimate.convertedJobId == null ? null : String(estimate.convertedJobId)]
+  );
+  await query(`DELETE FROM estimate_services WHERE estimate_id=$1`, [String(estimate.id)]);
+  let idx = 0;
+  for (const s of estimate.services || []) {
+    await query(
+      `INSERT INTO estimate_services (estimate_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+      [String(estimate.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
+    );
+  }
+}
+
 async function persistDbToPostgres(db) {
   const client = await pool.connect();
   try {
@@ -1535,46 +1586,55 @@ app.get("/contractors", (req, res) => {
   );
 });
 
-app.post("/contractors", (req, res) => {
-  const db = readDb();
-
-  const contractor = {
-    id: nextNumericId(db.contractors),
-    companyName: cleanString(req.body.companyName),
-    contactName: cleanString(req.body.contactName),
-    email: cleanString(req.body.email),
-    phone: cleanString(req.body.phone),
-    billingAddress: cleanString(req.body.billingAddress),
-    paymentTerms: cleanString(req.body.paymentTerms),
-    serviceAddresses: Array.isArray(req.body.serviceAddresses)
-      ? req.body.serviceAddresses.map(cleanString).filter(Boolean)
-      : [],
-    createdAt: new Date().toISOString()
-  };
-
-  db.contractors.push(contractor);
-  writeDb(db, "contractor_added");
-  res.json(contractor);
+app.post("/contractors", async (req, res) => {
+  try {
+    const db = readDb();
+    const contractor = {
+      id: nextNumericId(db.contractors),
+      companyName: cleanString(req.body.companyName),
+      contactName: cleanString(req.body.contactName),
+      email: cleanString(req.body.email),
+      phone: cleanString(req.body.phone),
+      billingAddress: cleanString(req.body.billingAddress),
+      paymentTerms: cleanString(req.body.paymentTerms),
+      serviceAddresses: Array.isArray(req.body.serviceAddresses)
+        ? req.body.serviceAddresses.map(cleanString).filter(Boolean)
+        : [],
+      createdAt: new Date().toISOString()
+    };
+    db.contractors.push(contractor);
+    await upsertContractor(contractor);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("contractor_added", {});
+    res.json(contractor);
+  } catch (err) {
+    console.error("Create contractor error:", err);
+    res.status(500).json({ error: "Could not save contractor: " + err.message });
+  }
 });
 
-app.put("/contractors/:id", (req, res) => {
-  const db = readDb();
-  const contractor = db.contractors.find(c => String(c.id) === String(req.params.id));
-
-  if (!contractor) return res.status(404).json({ error: "Contractor not found" });
-
-  contractor.companyName = cleanString(req.body.companyName);
-  contractor.contactName = cleanString(req.body.contactName);
-  contractor.email = cleanString(req.body.email);
-  contractor.phone = cleanString(req.body.phone);
-  contractor.billingAddress = cleanString(req.body.billingAddress);
-  contractor.paymentTerms = cleanString(req.body.paymentTerms);
-  contractor.serviceAddresses = Array.isArray(req.body.serviceAddresses)
-    ? req.body.serviceAddresses.map(cleanString).filter(Boolean)
-    : contractor.serviceAddresses;
-
-  writeDb(db, "contractor_updated");
-  res.json(contractor);
+app.put("/contractors/:id", async (req, res) => {
+  try {
+    const db = readDb();
+    const contractor = db.contractors.find(c => String(c.id) === String(req.params.id));
+    if (!contractor) return res.status(404).json({ error: "Contractor not found" });
+    contractor.companyName = cleanString(req.body.companyName);
+    contractor.contactName = cleanString(req.body.contactName);
+    contractor.email = cleanString(req.body.email);
+    contractor.phone = cleanString(req.body.phone);
+    contractor.billingAddress = cleanString(req.body.billingAddress);
+    contractor.paymentTerms = cleanString(req.body.paymentTerms);
+    contractor.serviceAddresses = Array.isArray(req.body.serviceAddresses)
+      ? req.body.serviceAddresses.map(cleanString).filter(Boolean)
+      : contractor.serviceAddresses;
+    await upsertContractor(contractor);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("contractor_updated", {});
+    res.json(contractor);
+  } catch (err) {
+    console.error("Update contractor error:", err);
+    res.status(500).json({ error: "Could not update contractor: " + err.message });
+  }
 });
 
 /* ---------- JOBS ---------- */
@@ -1594,61 +1654,65 @@ app.get("/jobs/next", (req, res) => {
   res.json(next);
 });
 
-app.post("/jobs", (req, res) => {
-  const db = readDb();
-  const serviceDate = cleanString(req.body.serviceDate) || db.dailySetup.date || todayString();
-
-  const job = {
-    id: nextNumericId(db.jobs),
-    contractorId: String(req.body.contractorId || ""),
-    serviceAddress: cleanString(req.body.serviceAddress),
-    serviceDate,
-    notes: cleanString(req.body.notes),
-    createdAt: new Date().toISOString(),
-    services: Array.isArray(req.body.services)
-      ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize))
-      : [],
-    photos: [],
-    sortOrder: nextSortOrderForDate(db, serviceDate),
-    deletedAt: null,
-    archivedAt: null,
-    finishedAt: null,
-    quickbooksStatus: "not_sent",
-    quickbooksInvoiceId: null
-  };
-
-  db.jobs.push(job);
-  writeDb(db, "job_created", { id: job.id });
-  res.json(hydrateJob(job, db));
+app.post("/jobs", async (req, res) => {
+  try {
+    const db = readDb();
+    const serviceDate = cleanString(req.body.serviceDate) || db.dailySetup.date || todayString();
+    const job = {
+      id: uuidv4(),
+      contractorId: String(req.body.contractorId || ""),
+      serviceAddress: cleanString(req.body.serviceAddress),
+      serviceDate,
+      notes: cleanString(req.body.notes),
+      createdAt: new Date().toISOString(),
+      services: Array.isArray(req.body.services)
+        ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize))
+        : [],
+      photos: [],
+      sortOrder: nextSortOrderForDate(db, serviceDate),
+      deletedAt: null,
+      archivedAt: null,
+      finishedAt: null,
+      quickbooksStatus: "not_sent",
+      quickbooksInvoiceId: null
+    };
+    db.jobs.push(job);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_created", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Create job error:", err);
+    res.status(500).json({ error: "Could not save job: " + err.message });
+  }
 });
 
-app.put("/jobs/:id", (req, res) => {
-  const db = readDb();
-  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
-
-  if (!job) return res.status(404).json({ error: "Job not found" });
-
-  const oldDate = job.serviceDate;
-  const newDate = cleanString(req.body.serviceDate) || oldDate;
-
-  job.contractorId = req.body.contractorId !== undefined ? String(req.body.contractorId) : job.contractorId;
-  job.serviceAddress = req.body.serviceAddress !== undefined ? cleanString(req.body.serviceAddress) : job.serviceAddress;
-  job.serviceDate = newDate;
-  job.notes = req.body.notes !== undefined ? cleanString(req.body.notes) : job.notes;
-
-  if (Array.isArray(req.body.services)) {
-    job.services = req.body.services.map((s, index) => {
-      const existing = job.services[index] || {};
-      return normalizeService({ ...existing, ...s }, db.dailySetup.crewSize);
-    });
+app.put("/jobs/:id", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    const oldDate = job.serviceDate;
+    const newDate = cleanString(req.body.serviceDate) || oldDate;
+    job.contractorId = req.body.contractorId !== undefined ? String(req.body.contractorId) : job.contractorId;
+    job.serviceAddress = req.body.serviceAddress !== undefined ? cleanString(req.body.serviceAddress) : job.serviceAddress;
+    job.serviceDate = newDate;
+    job.notes = req.body.notes !== undefined ? cleanString(req.body.notes) : job.notes;
+    if (Array.isArray(req.body.services)) {
+      job.services = req.body.services.map((s, index) => {
+        const existing = job.services[index] || {};
+        return normalizeService({ ...existing, ...s }, db.dailySetup.crewSize);
+      });
+    }
+    if (oldDate !== newDate) job.sortOrder = nextSortOrderForDate(db, newDate);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Update job error:", err);
+    res.status(500).json({ error: "Could not update job: " + err.message });
   }
-
-  if (oldDate !== newDate) {
-    job.sortOrder = nextSortOrderForDate(db, newDate);
-  }
-
-  writeDb(db, "job_updated", { id: job.id });
-  res.json(hydrateJob(job, db));
 });
 
 app.post("/jobs/reorder", (req, res) => {
@@ -1664,93 +1728,132 @@ app.post("/jobs/reorder", (req, res) => {
   res.json({ ok: true });
 });
 
-app.delete("/jobs/:id", (req, res) => {
-  const db = readDb();
-  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
-
-  if (!job) return res.status(404).json({ error: "Job not found" });
-
-  job.deletedAt = new Date().toISOString();
-  writeDb(db, "job_deleted", { id: job.id });
-  res.json({ ok: true });
+app.delete("/jobs/:id", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    job.deletedAt = new Date().toISOString();
+    await query(`UPDATE jobs SET deleted_at=$1 WHERE id=$2`, [job.deletedAt, String(job.id)]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_deleted", { id: job.id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Delete job error:", err);
+    res.status(500).json({ error: "Could not delete job: " + err.message });
+  }
 });
 
-app.post("/jobs/:id/archive", (req, res) => {
-  const db = readDb();
-  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
-
-  if (!job) return res.status(404).json({ error: "Job not found" });
-
-  job.archivedAt = new Date().toISOString();
-  writeDb(db, "job_archived", { id: job.id });
-  res.json({ ok: true });
+app.post("/jobs/:id/archive", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    job.archivedAt = new Date().toISOString();
+    await query(`UPDATE jobs SET archived_at=$1 WHERE id=$2`, [job.archivedAt, String(job.id)]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_archived", { id: job.id });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Archive job error:", err);
+    res.status(500).json({ error: "Could not archive job: " + err.message });
+  }
 });
 
 
 /* ---------- JOB LEVEL FIELD FLOW ---------- */
 
-app.post("/jobs/:id/on-my-way", (req, res) => {
-  const db = readDb();
-  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  const now = new Date().toISOString();
-  job.onMyWayTime = now;
-  storeJobGeo(job, "onMyWay", req.body.geo);
-  for (const service of job.services || []) {
-    if (!service.onMyWayTime) service.onMyWayTime = now;
+app.post("/jobs/:id/on-my-way", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    const now = new Date().toISOString();
+    job.onMyWayTime = now;
+    storeJobGeo(job, "onMyWay", req.body.geo);
+    for (const service of job.services || []) {
+      if (!service.onMyWayTime) service.onMyWayTime = now;
+    }
+    recordRouteEvent(db, { action: "on_my_way", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("On-my-way error:", err);
+    res.status(500).json({ error: "Could not update job: " + err.message });
   }
-  recordRouteEvent(db, { action: "on_my_way", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
-  writeDb(db, "job_updated", { id: job.id });
-  res.json(hydrateJob(job, db));
 });
 
-app.post("/jobs/:id/arrived", (req, res) => {
-  const db = readDb();
-  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  const now = new Date().toISOString();
-  job.arrivedTime = now;
-  storeJobGeo(job, "arrived", req.body.geo);
-  for (const service of job.services || []) {
-    if (!service.arrivedTime) service.arrivedTime = now;
+app.post("/jobs/:id/arrived", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    const now = new Date().toISOString();
+    job.arrivedTime = now;
+    storeJobGeo(job, "arrived", req.body.geo);
+    for (const service of job.services || []) {
+      if (!service.arrivedTime) service.arrivedTime = now;
+    }
+    recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Arrived error:", err);
+    res.status(500).json({ error: "Could not update job: " + err.message });
   }
-  recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
-  writeDb(db, "job_updated", { id: job.id });
-  res.json(hydrateJob(job, db));
 });
 
-app.post("/jobs/:id/leave-open", (req, res) => {
-  const db = readDb();
-  const job = db.jobs.find(j => String(j.id) === String(req.params.id));
-  if (!job) return res.status(404).json({ error: "Job not found" });
-  job.openStatus = "open";
-  job.finishedAt = null;
-  writeDb(db, "job_left_open", { id: job.id });
-  res.json(hydrateJob(job, db));
+app.post("/jobs/:id/leave-open", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    job.openStatus = "open";
+    job.finishedAt = null;
+    await query(`UPDATE jobs SET open_status='open', finished_at=NULL WHERE id=$1`, [String(job.id)]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_left_open", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Leave-open error:", err);
+    res.status(500).json({ error: "Could not update job: " + err.message });
+  }
 });
 
-app.post("/jobs/:id/continue", (req, res) => {
-  const db = readDb();
-  const oldJob = db.jobs.find(j => String(j.id) === String(req.params.id));
-  if (!oldJob) return res.status(404).json({ error: "Job not found" });
-  const nextDate = cleanString(req.body.serviceDate) || addDays(oldJob.serviceDate || todayString(), 1);
-  const job = {
-    ...cloneDb(oldJob),
-    id: nextNumericId(db.jobs),
-    serviceDate: nextDate,
-    createdAt: new Date().toISOString(),
-    sortOrder: nextSortOrderForDate(db, nextDate),
-    finishedAt: null,
-    archivedAt: null,
-    deletedAt: null,
-    openStatus: "continuation",
-    services: (oldJob.services || []).map(s => normalizeService({ category: s.category, subtype: s.subtype, crewSize: s.crewSize, junkLoad: s.junkLoad, junkPrice: s.junkPrice, linearFeet: s.linearFeet }, db.dailySetup.crewSize)),
-    photos: []
-  };
-  oldJob.openStatus = "continued";
-  db.jobs.push(job);
-  writeDb(db, "job_continued", { id: job.id, fromJobId: oldJob.id });
-  res.json(hydrateJob(job, db));
+app.post("/jobs/:id/continue", async (req, res) => {
+  try {
+    const db = readDb();
+    const oldJob = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!oldJob) return res.status(404).json({ error: "Job not found" });
+    const nextDate = cleanString(req.body.serviceDate) || addDays(oldJob.serviceDate || todayString(), 1);
+    const job = {
+      ...cloneDb(oldJob),
+      id: uuidv4(),
+      serviceDate: nextDate,
+      createdAt: new Date().toISOString(),
+      sortOrder: nextSortOrderForDate(db, nextDate),
+      finishedAt: null,
+      archivedAt: null,
+      deletedAt: null,
+      openStatus: "continuation",
+      services: (oldJob.services || []).map(s => normalizeService({ category: s.category, subtype: s.subtype, crewSize: s.crewSize, junkLoad: s.junkLoad, junkPrice: s.junkPrice, linearFeet: s.linearFeet }, db.dailySetup.crewSize)),
+      photos: []
+    };
+    oldJob.openStatus = "continued";
+    db.jobs.push(job);
+    await query(`UPDATE jobs SET open_status='continued' WHERE id=$1`, [String(oldJob.id)]);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_continued", { id: job.id, fromJobId: oldJob.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Continue job error:", err);
+    res.status(500).json({ error: "Could not continue job: " + err.message });
+  }
 });
 
 app.get("/route-history", (req, res) => {
@@ -1817,66 +1920,67 @@ function getService(req, res) {
   return { db, job, service, index };
 }
 
-app.post("/jobs/:id/services/:index/on-my-way", (req, res) => {
+app.post("/jobs/:id/services/:index/on-my-way", async (req, res) => {
   const { db, job, service } = getService(req, res);
   if (!service) return;
-
-  service.onMyWayTime = new Date().toISOString();
-  storeServiceGeo(service, "onMyWay", req.body.geo);
-  writeDb(db, "job_updated", { id: job.id });
-  res.json(hydrateJob(job, db));
+  try {
+    service.onMyWayTime = new Date().toISOString();
+    storeServiceGeo(service, "onMyWay", req.body.geo);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) { console.error("Service on-my-way error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/jobs/:id/services/:index/arrived", (req, res) => {
+app.post("/jobs/:id/services/:index/arrived", async (req, res) => {
   const { db, job, service } = getService(req, res);
   if (!service) return;
-
-  service.arrivedTime = new Date().toISOString();
-  storeServiceGeo(service, "arrived", req.body.geo);
-  writeDb(db, "job_updated", { id: job.id });
-  res.json(hydrateJob(job, db));
+  try {
+    service.arrivedTime = new Date().toISOString();
+    storeServiceGeo(service, "arrived", req.body.geo);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) { console.error("Service arrived error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/jobs/:id/services/:index/start", (req, res) => {
+app.post("/jobs/:id/services/:index/start", async (req, res) => {
   const { db, job, service, index } = getService(req, res);
   if (!service) return;
-
-  if (!isHourly(service)) {
-    return res.status(400).json({ error: "This service does not use a timer" });
-  }
-
-  service.startTime = new Date().toISOString();
-  service.endTime = null;
-  storeServiceGeo(service, "start", req.body.geo);
-  recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
-
-  writeDb(db, "job_updated", { id: job.id });
-  res.json(hydrateJob(job, db));
+  if (!isHourly(service)) return res.status(400).json({ error: "This service does not use a timer" });
+  try {
+    service.startTime = new Date().toISOString();
+    service.endTime = null;
+    storeServiceGeo(service, "start", req.body.geo);
+    recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) { console.error("Service start error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/jobs/:id/services/:index/stop", (req, res) => {
+app.post("/jobs/:id/services/:index/stop", async (req, res) => {
   const { db, job, service, index } = getService(req, res);
   if (!service) return;
-
-  if (isHourly(service) && !service.startTime) {
-    return res.status(400).json({ error: "Start the service first" });
-  }
-
-  service.endTime = new Date().toISOString();
-  storeServiceGeo(service, "stop", req.body.geo);
-  recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
-  service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
-
-  deductInventoryForJobIfNeeded(db, job);
-
-  if (job.services.length && job.services.every(s => s.endTime || !isHourly(s))) {
-    job.finishedAt = new Date().toISOString();
-  }
-
-  const next = getNextJob(db, job.serviceDate, job.id);
-
-  writeDb(db, "job_updated", { id: job.id, nextJob: next ? next.id : null });
-  res.json({ ok: true, job: hydrateJob(job, db), nextJob: next ? next.id : null });
+  if (isHourly(service) && !service.startTime) return res.status(400).json({ error: "Start the service first" });
+  try {
+    service.endTime = new Date().toISOString();
+    storeServiceGeo(service, "stop", req.body.geo);
+    recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
+    deductInventoryForJobIfNeeded(db, job);
+    if (job.services.length && job.services.every(s => s.endTime || !isHourly(s))) {
+      job.finishedAt = new Date().toISOString();
+    }
+    const next = getNextJob(db, job.serviceDate, job.id);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("job_updated", { id: job.id, nextJob: next ? next.id : null });
+    res.json({ ok: true, job: hydrateJob(job, db), nextJob: next ? next.id : null });
+  } catch (err) { console.error("Service stop error:", err); res.status(500).json({ error: err.message }); }
 });
 
 /* ---------- PHOTOS ---------- */
@@ -2001,57 +2105,69 @@ app.get("/estimates", (_req, res) => {
   res.json(db.estimates.map(e => hydrateEstimate(e, db)).sort((a, b) => Number(b.id) - Number(a.id)));
 });
 
-app.post("/estimates", (req, res) => {
-  const db = readDb();
-
-  const estimate = {
-    id: nextNumericId(db.estimates),
-    contractorId: String(req.body.contractorId || ""),
-    serviceAddress: cleanString(req.body.serviceAddress),
-    notes: cleanString(req.body.notes),
-    status: "open",
-    createdAt: new Date().toISOString(),
-    services: Array.isArray(req.body.services)
-      ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize))
-      : []
-  };
-
-  db.estimates.push(estimate);
-  writeDb(db, "estimate_created", { id: estimate.id });
-  res.json(hydrateEstimate(estimate, db));
+app.post("/estimates", async (req, res) => {
+  try {
+    const db = readDb();
+    const estimate = {
+      id: uuidv4(),
+      contractorId: String(req.body.contractorId || ""),
+      serviceAddress: cleanString(req.body.serviceAddress),
+      notes: cleanString(req.body.notes),
+      status: "open",
+      createdAt: new Date().toISOString(),
+      services: Array.isArray(req.body.services)
+        ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize))
+        : []
+    };
+    db.estimates.push(estimate);
+    await upsertEstimate(estimate);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("estimate_created", { id: estimate.id });
+    res.json(hydrateEstimate(estimate, db));
+  } catch (err) {
+    console.error("Create estimate error:", err);
+    res.status(500).json({ error: "Could not save estimate: " + err.message });
+  }
 });
 
-app.post("/estimates/:id/convert", (req, res) => {
-  const db = readDb();
-  const estimate = db.estimates.find(e => String(e.id) === String(req.params.id));
-  if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+app.post("/estimates/:id/convert", async (req, res) => {
+  try {
+    const db = readDb();
+    const estimate = db.estimates.find(e => String(e.id) === String(req.params.id));
+    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
 
-  const serviceDate = cleanString(req.body.serviceDate) || db.dailySetup.date || todayString();
+    const serviceDate = cleanString(req.body.serviceDate) || db.dailySetup.date || todayString();
 
-  const job = {
-    id: nextNumericId(db.jobs),
-    contractorId: String(estimate.contractorId),
-    serviceAddress: estimate.serviceAddress,
-    serviceDate,
-    notes: estimate.notes || "",
-    createdAt: new Date().toISOString(),
-    services: (estimate.services || []).map(s => normalizeService(s, db.dailySetup.crewSize)),
-    photos: [],
-    sortOrder: nextSortOrderForDate(db, serviceDate),
-    deletedAt: null,
-    archivedAt: null,
-    finishedAt: null,
-    quickbooksStatus: "not_sent",
-    quickbooksInvoiceId: null,
-    fromEstimateId: estimate.id
-  };
+    const job = {
+      id: uuidv4(),
+      contractorId: String(estimate.contractorId),
+      serviceAddress: estimate.serviceAddress,
+      serviceDate,
+      notes: estimate.notes || "",
+      createdAt: new Date().toISOString(),
+      services: (estimate.services || []).map(s => normalizeService(s, db.dailySetup.crewSize)),
+      photos: [],
+      sortOrder: nextSortOrderForDate(db, serviceDate),
+      deletedAt: null,
+      archivedAt: null,
+      finishedAt: null,
+      quickbooksStatus: "not_sent",
+      quickbooksInvoiceId: null,
+      fromEstimateId: estimate.id
+    };
 
-  estimate.status = "converted";
-  estimate.convertedJobId = job.id;
-  db.jobs.push(job);
-
-  writeDb(db, "estimate_converted", { estimateId: estimate.id, jobId: job.id });
-  res.json(hydrateJob(job, db));
+    estimate.status = "converted";
+    estimate.convertedJobId = job.id;
+    db.jobs.push(job);
+    await upsertEstimate(estimate);
+    await upsertJob(query, job);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("estimate_converted", { estimateId: estimate.id, jobId: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Convert estimate error:", err);
+    res.status(500).json({ error: "Could not convert estimate: " + err.message });
+  }
 });
 
 app.get("/estimate/:id/pdf", async (req, res) => {
