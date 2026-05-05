@@ -1196,6 +1196,7 @@
         <div class="sync-line">
           <button id="invAddBtn" class="secondary hidden" style="width:auto;" onclick="showAddInventoryForm()">+ Add Item</button>
           <button id="inventoryEditBtn" class="secondary" style="width:auto;" onclick="toggleInventoryEdit()">Edit</button>
+          <button id="invSaveBtn" class="hidden" style="width:auto;background:#16a34a;color:white;border:none;padding:8px 16px;border-radius:8px;font-weight:600;font-size:14px;" onclick="saveInventoryAndStay()">💾 Save</button>
           <button class="secondary" style="width:auto;" onclick="closeInventoryModal()">Close</button>
         </div>
       </div>
@@ -2282,8 +2283,17 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       const btn = document.getElementById("inventoryEditBtn");
       if (btn) btn.innerText = invEditMode ? "Done Editing" : "Edit";
       document.getElementById("invAddBtn")?.classList.toggle("hidden", !invEditMode);
+      document.getElementById("invSaveBtn")?.classList.toggle("hidden", !invEditMode);
       if (!invEditMode) saveAllInventoryEdits();
       else renderInventoryModalList();
+    }
+
+    async function saveInventoryAndStay() {
+      const btn = document.getElementById("invSaveBtn");
+      if (btn) { btn.innerText = "Saving..."; btn.disabled = true; }
+      await saveAllInventoryEdits();
+      if (btn) { btn.innerText = "✅ Saved!"; btn.disabled = false; }
+      setTimeout(() => { if (btn) btn.innerText = "💾 Save"; }, 1500);
     }
 
     async function saveAllInventoryEdits() {
