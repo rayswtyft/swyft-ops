@@ -484,7 +484,35 @@
 
     .ipad-safe .service-card{padding:16px}
 
-  </style>
+  
+    /* Google Maps autocomplete dropdown - must escape modal overflow clipping */
+    .pac-container {
+      z-index: 99999 !important;
+      position: fixed !important;
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+      font-family: inherit;
+      margin-top: 2px;
+    }
+    .pac-item {
+      padding: 10px 14px;
+      font-size: 14px;
+      cursor: pointer;
+      color: #1a1a2e;
+    }
+    .pac-item:hover, .pac-item-selected {
+      background: #f3f4f6;
+    }
+    .pac-item-query {
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    .pac-matched {
+      font-weight: 700;
+    }
+</style>
 
 </head>
 
@@ -3361,11 +3389,6 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
     async function jobAction(url){
       try {
-        // Enforce clock-in before any job action
-        if (!currentEmployee) {
-          alert("You must be clocked in before performing job actions.");
-          return;
-        }
         const geo = await getBrowserGeo();
         const res = await fetch(url, {
           method:"POST",
