@@ -2004,31 +2004,25 @@ function renderInventoryModalList(){
 
 
 
+    async function addInventoryItem(){
+      const name = $("newInvName").value.trim();
+      if (!name) return alert("Enter item name");
+      const qty = Number($("newInvQty")?.value || 1);
+      const unit = $("newInvUnit")?.value?.trim() || "pieces";
+      const category = $("newInvCategory")?.value || "supply";
+      const location = $("newInvLocation")?.value || "van";
+      const reorderPoint = Number($("newInvReorder")?.value || 0);
+      await fetch("/inventory/add", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, quantity: qty, unit, category, location, reorderPoint, active: true })
+      });
+      await loadInventory();
+      renderLowStockList();
+      alert("Item added");
+    }
+
     async function saveInventoryEdits(){
-async function addInventoryItem(){
-  const name = $("newInvName").value.trim();
-
-  if (!name) return alert("Enter item name");
-
-  await fetch("/inventory/add", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-   body: JSON.stringify({
-  name: item.name,
-  quantity,
-  location: $(`inv-location-${itemId}`)?.value || item.location || "van",
-  category: item.category || "supply",
-  unit: item.unit,
-  reorderPoint: item.reorderPoint,
-  active: item.active !== false
-})
-  });
-
-  await loadInventory();
-  renderLowStockList();
-
-  alert("Inventory item added");
-}
       for (const item of inventory) {
 
         const itemId = item.id || item.key;
