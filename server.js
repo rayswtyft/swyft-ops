@@ -336,6 +336,9 @@ await query(`
 }
 
 async function loadDbFromPostgres() {
+  
+category: i.category || "supply",
+location: i.location || "van",
   const db = defaultState();
   const contractorsRes = await query(`SELECT * FROM contractors ORDER BY id`);
   const contractorAddressesRes = await query(`SELECT * FROM contractor_addresses ORDER BY id`);
@@ -486,9 +489,25 @@ async function persistDbToPostgres(db) {
       for (const addr of c.serviceAddresses || []) await client.query(`INSERT INTO contractor_addresses (contractor_id, address) VALUES ($1,$2)`, [String(c.id), addr]);
     }
 
-    for (const item of db.inventory || []) {
-      await client.query(`INSERT INTO inventory (id, item_key, name, quantity, unit, reorder_point, active, display) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [String(item.id || item.key), item.key || String(item.id), item.name || "", item.quantity, item.unit || "", item.reorderPoint, item.active !== false, item.display || null]);
-    }
+   
+for (const item of db.inventory || []) {
+  await client.query(
+    `INSERT INTO inventory (id, item_key, name, category, location, quantity, unit, reorder_point, active, display)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+    [
+      String(item.id || item.key),
+      item.key || String(item.id),
+      item.name || "",
+      item.category || "supply",
+      item.location || "van",
+      item.quantity,
+      item.unit || "",
+      item.reorderPoint,
+      item.active !== false,
+      item.display || null
+    ]
+  );
+}
 
     for (const job of db.jobs || []) {
       await client.query(`INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day"]);
