@@ -3022,8 +3022,11 @@ $("manualAddress").value = "";
 
               ${isHourly(s) ? `Crew: ${s.crewSize} • Billable Hours: ${s.hoursWorked}` : ""}
 
-              ${s.category === "Junk" ? `Load: ${s.junkLoad}` : ""}
-
+${s.category === "Junk" && currentMode === "van" ? `
+  <select onchange="updateVanJunkLoad(${job.id}, ${i}, this.value)">
+    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label} - ${fmtMoney(o.price)}</option>`).join("")}
+  </select>
+` : s.category === "Junk" ? `Load: ${s.junkLoad}` : ""}
               ${isConcrete(s) ? `Linear feet: ${s.linearFeet}` : ""}
 
             </div>
@@ -3209,7 +3212,27 @@ $("manualAddress").value = "";
     }
 
 
+async function updateVanJunkLoad(jobId, serviceIndex, load){
+  const job = jobs.find(j => j.id === jobId);
+  const service = job.services[serviceIndex];
 
+  service.junkLoad = load;
+  const match = junkOptionsForService(service).find(x => x.label === load);
+  service.junkPrice = match ? match.price : service.junkPrice;
+
+  await fetch(`/jobs/${jobId}`, {
+    method:"PUT",
+    headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify({
+      serviceAddress: job.serviceAddress,
+      serviceDate: job.serviceDate,
+      notes: job.notes,
+      services: job.services
+    })
+  });
+
+  await refreshAll(true);
+}
     async function saveJobEdits(jobId){
 
       const original = jobs.find(j => j.id === jobId);
@@ -3226,7 +3249,7 @@ $("manualAddress").value = "";
 
         const junkLoad = $(`editJunk-${i}`)?.value || s.junkLoad;
 
-        const junkMatch = junkOptionsForService(arr[index]).find(x => x.label === junkLoad);
+const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x.label === junkLoad);
 
 
 
