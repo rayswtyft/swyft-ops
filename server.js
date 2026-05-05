@@ -2258,7 +2258,7 @@ app.post("/finish-day", async (req, res) => {
   const output = fs.createWriteStream(zipPath);
   const archive = archiver("zip", { zlib: { level: 9 } });
 
-  output.on("close", () => {
+  output.on("close", async () => {
     const db2 = readDb();
     finishedRawJobs.forEach(j => {
       const dbJob = db2.jobs.find(x => String(x.id) === String(j.id));
