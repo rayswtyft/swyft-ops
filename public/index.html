@@ -2132,15 +2132,11 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
     async function loadInventory(){
-
       const res = await fetch("/inventory");
-
       const data = await res.json();
-
       inventory = Array.isArray(data) ? data : (data.items || []);
-
-      renderInventoryModalList();
-
+      // Don't wipe inputs if user is actively editing
+      if (!invEditMode) renderInventoryModalList();
     }
 
 
@@ -2382,13 +2378,7 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       renderInventoryModalList();
     }
 
-    async function loadInventory() {
-      const res = await fetch("/inventory");
-      const data = await res.json();
-      inventory = Array.isArray(data) ? data : (data.items || []);
-      renderInventoryModalList();
-      renderLowStockList();
-    }
+    // (loadInventory defined above — this duplicate removed)
 
     // Quick Adjust Modal
     function openInvAdjById(btn) {
