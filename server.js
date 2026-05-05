@@ -329,7 +329,7 @@ async function migrateDatabase() {
   await query(`CREATE TABLE IF NOT EXISTS estimates (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, status TEXT DEFAULT 'open', created_at TEXT, converted_job_id TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, item_key TEXT UNIQUE, name TEXT, quantity NUMERIC, unit TEXT, reorder_point NUMERIC, active BOOLEAN DEFAULT true, display JSONB)`);
-  await query(`CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN DEFAULT true, created_at TEXT)`);
+  await query(`CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN DEFAULT true, created_at TEXT, bio_credential TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT, clock_in_geo JSONB, clock_out_geo JSONB)`);
 await query(`
   CREATE TABLE IF NOT EXISTS daily_setup (
@@ -353,6 +353,8 @@ await query(`
   await query(`ALTER TABLE time_clock_entries ADD COLUMN IF NOT EXISTS clock_out_geo JSONB`);
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
+  // Add bio_credential column to existing employees tables
+  await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS bio_credential TEXT`);
   await query(`CREATE TABLE IF NOT EXISTS inventory_movements (id SERIAL PRIMARY KEY, item_id TEXT, item_name TEXT, delta NUMERIC, new_quantity NUMERIC, reason TEXT, moved_by TEXT, moved_at TEXT DEFAULT NOW())`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
 
@@ -2803,7 +2805,8 @@ app.put("/employees/:id", async (req, res) => {
     if (!employee) return res.status(404).json({ error: "Employee not found" });
     if (req.body.name !== undefined) employee.name = cleanString(req.body.name);
     if (req.body.active !== undefined) employee.active = !!req.body.active;
-    await query(`UPDATE employees SET name=$1, active=$2 WHERE id=$3`, [employee.name, employee.active, String(employee.id)]);
+    if (req.body.bio_credential !== undefined) employee.bio_credential = req.body.bio_credential || null;
+    await query(`UPDATE employees SET name=$1, active=$2, bio_credential=$3 WHERE id=$4`, [employee.name, employee.active, employee.bio_credential || null, String(employee.id)]);
     memoryDb = db;
     broadcastUpdate("employee_updated", {});
     res.json(employee);
@@ -2821,6 +2824,32 @@ app.delete("/employees/:id", async (req, res) => {
     broadcastUpdate("employee_removed", {});
     res.json({ ok: true });
   } catch (err) { console.error("Remove employee error:", err); res.status(500).json({ error: err.message }); }
+});
+
+app.post("/employees/:id/bio-enroll", async (req, res) => {
+  try {
+    const db = readDb();
+    const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+    const credentialId = req.body.credentialId;
+    if (!credentialId) return res.status(400).json({ error: "credentialId required" });
+    employee.bio_credential = credentialId;
+    await query(`UPDATE employees SET bio_credential=$1 WHERE id=$2`, [credentialId, String(employee.id)]);
+    memoryDb = db;
+    res.json({ ok: true });
+  } catch (err) { console.error("Bio enroll error:", err); res.status(500).json({ error: err.message }); }
+});
+
+app.delete("/employees/:id/bio-enroll", async (req, res) => {
+  try {
+    const db = readDb();
+    const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+    employee.bio_credential = null;
+    await query(`UPDATE employees SET bio_credential=NULL WHERE id=$1`, [String(employee.id)]);
+    memoryDb = db;
+    res.json({ ok: true });
+  } catch (err) { console.error("Bio remove error:", err); res.status(500).json({ error: err.message }); }
 });
 
 app.get("/time-clock", (req, res) => {

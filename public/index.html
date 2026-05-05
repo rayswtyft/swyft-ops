@@ -4655,12 +4655,42 @@ async function saveScheduleCrew() {
 
 
     // ===== WEBAUTHN BIOMETRIC =====
-    // Store: { employeeId -> credentialId (base64) }
-    function getBioCreds() {
-      try { return JSON.parse(localStorage.getItem("swyfBioCreds") || "{}"); } catch { return {}; }
+    // Credentials stored on server (employee.bio_credential) + cached locally as fallback
+    function getBioCredsCache() {
+      try { return JSON.parse(localStorage.getItem("swyfBioCredsCache") || "{}"); } catch { return {}; }
     }
-    function saveBioCreds(creds) {
-      localStorage.setItem("swyfBioCreds", JSON.stringify(creds));
+    function setBioCredsCache(creds) {
+      try { localStorage.setItem("swyfBioCredsCache", JSON.stringify(creds)); } catch {}
+    }
+    // Build creds map from employees array (loaded from server)
+    function getBioCreds() {
+      const map = {};
+      (employees || []).forEach(e => { if (e.bio_credential) map[String(e.id)] = e.bio_credential; });
+      // merge with local cache in case employees not loaded yet
+      const cache = getBioCredsCache();
+      Object.assign(cache, map);
+      return cache;
+    }
+    async function saveBioCredToServer(employeeId, credentialId) {
+      const res = await fetch(`/employees/${employeeId}/bio-enroll`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credentialId })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        // update local cache too
+        const cache = getBioCredsCache();
+        cache[String(employeeId)] = credentialId;
+        setBioCredsCache(cache);
+      }
+      return data.ok;
+    }
+    async function removeBioCredFromServer(employeeId) {
+      await fetch(`/employees/${employeeId}/bio-enroll`, { method: "DELETE" });
+      const cache = getBioCredsCache();
+      delete cache[String(employeeId)];
+      setBioCredsCache(cache);
     }
 
     function bufferToBase64(buf) {
@@ -4707,9 +4737,8 @@ async function saveScheduleCrew() {
             timeout: 60000
           }
         });
-        const creds = getBioCreds();
-        creds[String(employeeId)] = bufferToBase64(cred.rawId);
-        saveBioCreds(creds);
+        const credId = bufferToBase64(cred.rawId);
+        await saveBioCredToServer(employeeId, credId);
         return true;
       } catch (err) {
         if (err.name !== "NotAllowedError") alert("Enrollment failed: " + err.message);
@@ -4753,7 +4782,8 @@ async function saveScheduleCrew() {
 
       // Biometric check if enrolled
       const creds = getBioCreds();
-      if (creds[String(employeeId)]) {
+      const hasBio = !!(creds[String(employeeId)]);
+      if (hasBio) {
         const verified = await verifyBiometric(employeeId);
         if (verified === false) return alert("Biometric verification failed. Clock-in denied.");
         if (verified === null) { /* not available, fall through */ }
@@ -4837,15 +4867,15 @@ async function saveScheduleCrew() {
       const ok = await enrollBiometric(id, name);
       if (ok) {
         alert(name + " fingerprint enrolled successfully! They must use Touch ID to clock in on this device.");
+        await loadEmployees();
         renderEmployeeManagerList();
       }
     }
 
-    function removeEmployeeBio(id, name) {
+    async function removeEmployeeBio(id, name) {
       if (!confirm("Remove biometric for " + name + "? They will be able to clock in without fingerprint on this device.")) return;
-      const creds = getBioCreds();
-      delete creds[String(id)];
-      saveBioCreds(creds);
+      await removeBioCredFromServer(id);
+      await loadEmployees();
       renderEmployeeManagerList();
     }
 
