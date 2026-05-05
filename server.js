@@ -1408,7 +1408,7 @@ app.get("/daily-setup", (_req, res) => {
   });
 });
 
-app.post("/daily-setup", (req, res) => {
+app.post("/daily-setup", async (req, res) => {
   const db = readDb();
   db.dailySetup ||= {};
   db.dailySetup.date = cleanString(req.body.date) || todayString();
@@ -1997,7 +1997,7 @@ app.post("/jobs/:id/services/:index/stop", async (req, res) => {
 
 /* ---------- PHOTOS ---------- */
 
-app.post("/jobs/:id/photos", upload.single("photo"), (req, res) => {
+app.post("/jobs/:id/photos", upload.single("photo"), async (req, res) => {
   const db = readDb();
   const job = db.jobs.find(j => String(j.id) === String(req.params.id));
 
@@ -2026,7 +2026,7 @@ app.post("/jobs/:id/photos", upload.single("photo"), (req, res) => {
   res.json(photo);
 });
 
-app.delete("/jobs/:jobId/photos/:photoId", (req, res) => {
+app.delete("/jobs/:jobId/photos/:photoId", async (req, res) => {
   const db = readDb();
   const job = db.jobs.find(j => String(j.id) === String(req.params.jobId));
 
