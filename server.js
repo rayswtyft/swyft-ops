@@ -971,14 +971,20 @@ function sumRangesMinutes(ranges = []) {
   );
 }
 
+function getChecklistsForDb(db) {
+  // Merge hardcoded defaults with any manager overrides saved in DB
+  return Object.assign({}, CHECKLISTS, db.checklistTemplates || {});
+}
+
 function dailyChecklistForDate(date, db) {
+  const checklists = getChecklistsForDb(db);
   const items = new Set();
   db.jobs
     .filter(job => job.serviceDate === date && !job.deletedAt && !job.archivedAt)
     .forEach(job => {
       (job.services || []).forEach(service => {
         const key = `${service.category}|${service.subtype}`;
-        (CHECKLISTS[key] || []).forEach(item => items.add(item));
+        (checklists[key] || []).forEach(item => items.add(item));
       });
     });
   return Array.from(items).sort((a, b) => a.localeCompare(b));
@@ -987,12 +993,13 @@ function dailyChecklistForDate(date, db) {
 // Build enhanced checklist with item metadata (type, location)
 function buildEnhancedChecklist(date, db) {
   const itemNames = new Set();
+  const checklists = getChecklistsForDb(db);
   db.jobs
     .filter(job => job.serviceDate === date && !job.deletedAt && !job.archivedAt)
     .forEach(job => {
       (job.services || []).forEach(service => {
         const key = `${service.category}|${service.subtype}`;
-        (CHECKLISTS[key] || []).forEach(item => itemNames.add(item));
+        (checklists[key] || []).forEach(item => itemNames.add(item));
       });
     });
 
@@ -1528,6 +1535,39 @@ app.get("/daily-checklist", (req, res) => {
 });
 
 // Enhanced checklist with type, location, loading flags
+
+// GET all checklist templates (merged hardcoded + any overrides saved in DB)
+app.get("/checklist-templates", (req, res) => {
+  const db = readDbRO();
+  // Start with hardcoded defaults, then override with any saved templates
+  const merged = Object.assign({}, CHECKLISTS);
+  const saved = db.checklistTemplates || {};
+  Object.assign(merged, saved);
+  res.json(merged);
+});
+
+// POST save/update a single checklist template
+app.post("/checklist-templates", async (req, res) => {
+  try {
+    const db = readDb();
+    const key = cleanString(req.body.key);
+    const items = req.body.items;
+    if (!key || !Array.isArray(items)) return res.status(400).json({ error: "key and items required" });
+    db.checklistTemplates ||= {};
+    db.checklistTemplates[key] = items.map(i => String(i).trim()).filter(Boolean);
+    await query(
+      `INSERT INTO checklist_templates (service_key, items) VALUES ($1,$2)
+       ON CONFLICT (service_key) DO UPDATE SET items=$2, updated_at=NOW()`,
+      [key, JSON.stringify(db.checklistTemplates[key])]
+    ).catch(() => {}); // fallback: just keep in memory if table doesn't exist
+    memoryDb = db;
+    res.json({ ok: true, key, items: db.checklistTemplates[key] });
+  } catch(err) {
+    console.error("checklist-templates POST error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/checklist-enhanced", (req, res) => {
   const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();

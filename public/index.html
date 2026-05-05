@@ -815,7 +815,7 @@
 
             <button class="secondary" onclick="openInventoryModal()">Open Inventory</button>
 
-            <div></div>
+            <button class="secondary" onclick="openChecklistEditor()">Edit Checklists</button>
 
           </div>
 
@@ -4889,8 +4889,129 @@ async function saveScheduleCrew() {
     }
 
 
+  
+    // ========================= CHECKLIST EDITOR =========================
+    let clEditorTemplates = {};
+    let clEditorCurrentKey = null;
+
+    async function openChecklistEditor() {
+      try {
+        const res = await fetch("/checklist-templates");
+        clEditorTemplates = await res.json();
+      } catch(e) {
+        clEditorTemplates = {};
+      }
+      renderClEditorTabs();
+      // Select first tab
+      const keys = Object.keys(clEditorTemplates);
+      if (keys.length > 0) selectClEditorTab(keys[0]);
+      document.getElementById("checklistEditorModal").classList.remove("hidden");
+    }
+
+    function closeChecklistEditor() {
+      document.getElementById("checklistEditorModal").classList.add("hidden");
+    }
+
+    function renderClEditorTabs() {
+      const tabsEl = document.getElementById("clEditorJobTabs");
+      const keys = Object.keys(clEditorTemplates).sort();
+      tabsEl.innerHTML = keys.map(k => {
+        const label = k.replace("|", " - ");
+        return `<button class="secondary cl-editor-tab" id="cltab-${btoa(k)}" style="font-size:12px;padding:5px 10px;" onclick="selectClEditorTab('${k.replace(/'/g,"\'")}')">` + label + `</button>`;
+      }).join("");
+    }
+
+    function selectClEditorTab(key) {
+      clEditorCurrentKey = key;
+      // Highlight active
+      document.querySelectorAll(".cl-editor-tab").forEach(b => b.classList.remove("active"));
+      const tabId = "cltab-" + btoa(key);
+      document.getElementById(tabId)?.classList.add("active");
+      renderClEditorBody();
+    }
+
+    function renderClEditorBody() {
+      const bodyEl = document.getElementById("clEditorBody");
+      if (!clEditorCurrentKey) { bodyEl.innerHTML = ""; return; }
+      const items = clEditorTemplates[clEditorCurrentKey] || [];
+      const label = clEditorCurrentKey.replace("|", " - ");
+      bodyEl.innerHTML = `
+        <div style="background:#f9f9f9;border-radius:10px;padding:14px;">
+          <div style="font-weight:600;font-size:15px;margin-bottom:10px;">${label}</div>
+          <div id="clItemsList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:12px;">
+            ${items.map((item, i) => `
+              <div style="display:flex;align-items:center;gap:8px;" id="clitem-row-${i}">
+                <input value="${item.replace(/"/g,'&quot;')}" id="clitem-${i}" style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid #ddd;font-size:14px;" />
+                <button onclick="removeClItem(${i})" style="background:#ef4444;color:white;border:none;border-radius:6px;padding:6px 10px;font-size:13px;cursor:pointer;">✕</button>
+              </div>
+            `).join("")}
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <input id="clNewItemInput" placeholder="Add new item..." style="flex:1;padding:6px 10px;border-radius:6px;border:1px solid #ddd;font-size:14px;" onkeydown="if(event.key==='Enter')addClItem()" />
+            <button onclick="addClItem()" style="background:#2563eb;color:white;border:none;border-radius:6px;padding:6px 14px;font-size:14px;cursor:pointer;">+ Add</button>
+          </div>
+          <button id="clSaveBtn" onclick="saveClEditorChanges()" style="background:#16a34a;color:white;border:none;border-radius:8px;padding:9px 20px;font-weight:600;font-size:14px;cursor:pointer;width:100%;">💾 Save Changes</button>
+        </div>
+      `;
+    }
+
+    function addClItem() {
+      const input = document.getElementById("clNewItemInput");
+      const val = input.value.trim();
+      if (!val) return;
+      if (!clEditorTemplates[clEditorCurrentKey]) clEditorTemplates[clEditorCurrentKey] = [];
+      clEditorTemplates[clEditorCurrentKey].push(val);
+      input.value = "";
+      renderClEditorBody();
+    }
+
+    function removeClItem(index) {
+      clEditorTemplates[clEditorCurrentKey].splice(index, 1);
+      renderClEditorBody();
+    }
+
+    async function saveClEditorChanges() {
+      // Collect current values from inputs before saving
+      const items = clEditorTemplates[clEditorCurrentKey] || [];
+      const updated = items.map((_, i) => {
+        const el = document.getElementById("clitem-" + i);
+        return el ? el.value.trim() : null;
+      }).filter(v => v);
+      clEditorTemplates[clEditorCurrentKey] = updated;
+
+      const btn = document.getElementById("clSaveBtn");
+      if (btn) { btn.innerText = "Saving..."; btn.disabled = true; }
+      try {
+        const res = await fetch("/checklist-templates", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: clEditorCurrentKey, items: updated })
+        });
+        if (!res.ok) throw new Error("Save failed");
+        if (btn) { btn.innerText = "✅ Saved!"; btn.disabled = false; }
+        setTimeout(() => { if (btn && btn.innerText === "✅ Saved!") btn.innerText = "💾 Save Changes"; }, 1500);
+      } catch(e) {
+        alert("Save failed: " + e.message);
+        if (btn) { btn.innerText = "💾 Save Changes"; btn.disabled = false; }
+      }
+    }
+    // ========================= END CHECKLIST EDITOR =========================
+
   </script>
 
+
+  <!-- ===================== CHECKLIST EDITOR MODAL ===================== -->
+  <div id="checklistEditorModal" class="modal hidden" style="z-index:1100;">
+    <div class="modal-box" style="max-width:600px;max-height:90vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h2 style="margin:0;">Edit Checklists</h2>
+        <button class="secondary" style="width:auto;" onclick="closeChecklistEditor()">Close</button>
+      </div>
+      <div class="muted" style="margin-bottom:12px;">Select a job type to edit its checklist items.</div>
+      <div id="clEditorJobTabs" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;"></div>
+      <div id="clEditorBody"></div>
+    </div>
+  </div>
 </body>
 
 </html>
