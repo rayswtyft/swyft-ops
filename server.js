@@ -477,6 +477,33 @@ async function insertServiceRow(client, table, parentColumn, parentId, s, index)
   );
 }
 
+// DIRECT UPSERT HELPERS — write individual records without nuking all data
+async function upsertClockEntry(entry) {
+  await query(
+    `INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date, clock_in_geo, clock_out_geo)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT (id) DO UPDATE SET clock_out=$5, minutes=$6, clock_out_geo=$9`,
+    [String(entry.id), entry.employeeId == null ? null : String(entry.employeeId), entry.name || "", entry.clockIn, entry.clockOut || null, entry.minutes == null ? null : Number(entry.minutes), entry.date, entry.clockInGeo || null, entry.clockOutGeo || null]
+  );
+}
+
+async function upsertInventoryItem(item) {
+  await query(
+    `INSERT INTO inventory (id, item_key, name, category, location, quantity, unit, reorder_point, active, display)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     ON CONFLICT (id) DO UPDATE SET name=$3, category=$4, location=$5, quantity=$6, unit=$7, reorder_point=$8, active=$9`,
+    [String(item.id || item.key), item.key || String(item.id), item.name || "", item.category || "supply", item.location || "van", item.quantity, item.unit || "", item.reorderPoint, item.active !== false, item.display || null]
+  );
+}
+
+async function upsertChecklistState(date, itemName, checked) {
+  await query(
+    `INSERT INTO daily_checklist_state (check_date, item, checked) VALUES ($1,$2,$3)
+     ON CONFLICT (check_date, item) DO UPDATE SET checked=$3`,
+    [date, itemName, !!checked]
+  );
+}
+
 async function persistDbToPostgres(db) {
   const client = await pool.connect();
   try {
@@ -1396,18 +1423,23 @@ app.get("/daily-checklist", (req, res) => {
   });
 });
 
-app.post("/daily-checklist/toggle", (req, res) => {
-  const db = readDb();
-
-  const date = cleanString(req.body.date) || db.dailySetup.date || todayString();
-  const item = cleanString(req.body.item);
-  const checked = !!req.body.checked;
-
-  db.dailySetup.dailyChecklistState[date] ||= {};
-  db.dailySetup.dailyChecklistState[date][item] = checked;
-
-  writeDb(db, "checklist_updated", { date, item, checked });
-  res.json({ ok: true });
+app.post("/daily-checklist/toggle", async (req, res) => {
+  try {
+    const db = readDb();
+    const date = cleanString(req.body.date) || db.dailySetup.date || todayString();
+    const item = cleanString(req.body.item);
+    const checked = !!req.body.checked;
+    db.dailySetup.dailyChecklistState[date] ||= {};
+    db.dailySetup.dailyChecklistState[date][item] = checked;
+    // Write directly to Postgres first, then update memory
+    await upsertChecklistState(date, item, checked);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("checklist_updated", { date, item, checked });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Checklist toggle error:", err);
+    res.status(500).json({ error: "Checklist save failed: " + err.message });
+  }
 });
 
 /* ---------- DASHBOARD / REPORTING ---------- */
@@ -1886,56 +1918,69 @@ app.get("/inventory", (_req, res) => {
   });
 });
 
-app.put("/inventory/:id", (req, res) => {
-  const db = readDb();
-  const item = db.inventory.find(i => String(i.id) === String(req.params.id));
-
-  if (!item) return res.status(404).json({ error: "Inventory item not found" });
-
-  item.name = cleanString(req.body.name) || item.name;
-  item.category = cleanString(req.body.category) || item.category || "supply";
-item.location = cleanString(req.body.location) || item.location || "van";
-  item.quantity = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
-  item.unit = cleanString(req.body.unit) || item.unit;
-  item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
-  item.active = req.body.active === undefined ? item.active : !!req.body.active;
-
-  writeDb(db, "inventory_updated");
-  res.json(getInventoryViewItem(item));
+app.put("/inventory/:id", async (req, res) => {
+  try {
+    const db = readDb();
+    const item = db.inventory.find(i => String(i.id) === String(req.params.id));
+    if (!item) return res.status(404).json({ error: "Inventory item not found" });
+    item.name = cleanString(req.body.name) || item.name;
+    item.category = cleanString(req.body.category) || item.category || "supply";
+    item.location = cleanString(req.body.location) || item.location || "van";
+    item.quantity = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
+    item.unit = cleanString(req.body.unit) || item.unit;
+    item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
+    item.active = req.body.active === undefined ? item.active : !!req.body.active;
+    await upsertInventoryItem(item);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("inventory_updated", {});
+    res.json(getInventoryViewItem(item));
+  } catch (err) {
+    console.error("Inventory update error:", err);
+    res.status(500).json({ error: "Inventory save failed: " + err.message });
+  }
 });
 
-app.post("/inventory/adjust", (req, res) => {
-  const db = readDb();
-  const item = db.inventory.find(i => String(i.id) === String(req.body.id));
-
-  if (!item) return res.status(404).json({ error: "Item not found" });
-  if (item.quantity == null) return res.status(400).json({ error: "This item does not track quantity" });
-
-  item.quantity = Number((Number(item.quantity || 0) + Number(req.body.delta || 0)).toFixed(2));
-  if (item.quantity < 0) item.quantity = 0;
-
-  writeDb(db, "inventory_updated");
-  res.json(getInventoryViewItem(item));
+app.post("/inventory/adjust", async (req, res) => {
+  try {
+    const db = readDb();
+    const item = db.inventory.find(i => String(i.id) === String(req.body.id));
+    if (!item) return res.status(404).json({ error: "Item not found" });
+    if (item.quantity == null) return res.status(400).json({ error: "This item does not track quantity" });
+    item.quantity = Number((Number(item.quantity || 0) + Number(req.body.delta || 0)).toFixed(2));
+    if (item.quantity < 0) item.quantity = 0;
+    await upsertInventoryItem(item);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("inventory_updated", {});
+    res.json(getInventoryViewItem(item));
+  } catch (err) {
+    console.error("Inventory adjust error:", err);
+    res.status(500).json({ error: "Inventory adjust failed: " + err.message });
+  }
 });
 
-app.post("/inventory/add", (req, res) => {
-  const db = readDb();
-
-  const item = {
-    id: uuidv4(),
-    key: cleanString(req.body.key) || uuidv4(),
-    name: cleanString(req.body.name),
-    category: cleanString(req.body.category) || "supply",
-    location: cleanString(req.body.location) || "van",
-    quantity: req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity),
-    unit: cleanString(req.body.unit) || "pieces",
-    reorderPoint: req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint),
-    active: true
-  };
-
-  db.inventory.push(item);
-  writeDb(db, "inventory_added");
-  res.json(getInventoryViewItem(item));
+app.post("/inventory/add", async (req, res) => {
+  try {
+    const db = readDb();
+    const item = {
+      id: uuidv4(),
+      key: cleanString(req.body.key) || uuidv4(),
+      name: cleanString(req.body.name),
+      category: cleanString(req.body.category) || "supply",
+      location: cleanString(req.body.location) || "van",
+      quantity: req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity),
+      unit: cleanString(req.body.unit) || "pieces",
+      reorderPoint: req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint),
+      active: true
+    };
+    db.inventory.push(item);
+    await upsertInventoryItem(item);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("inventory_added", {});
+    res.json(getInventoryViewItem(item));
+  } catch (err) {
+    console.error("Inventory add error:", err);
+    res.status(500).json({ error: "Inventory add failed: " + err.message });
+  }
 });
 /* ---------- ESTIMATES ---------- */
 
@@ -2367,34 +2412,50 @@ app.get("/time-clock", (req, res) => {
   res.json(rows);
 });
 
-app.post("/time-clock/clock-in", (req, res) => {
-  const db = readDb();
-  const employeeId = String(req.body.employeeId || "");
-  const employee = (db.employees || []).find(e => String(e.id) === employeeId && e.active !== false);
-  if (!employee) return res.status(404).json({ error: "Employee not found" });
-  db.timeClockEntries ||= [];
-  const active = db.timeClockEntries.find(r => String(r.employeeId) === employeeId && !r.clockOut);
-  if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });
-  const row = { id: nextNumericId(db.timeClockEntries), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString(), clockInGeo: normalizeGeo(req.body.geo), clockOutGeo: null };
-  db.timeClockEntries.push(row);
-  recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
-  writeDb(db, "employee_clocked_in");
-  res.json(row);
+app.post("/time-clock/clock-in", async (req, res) => {
+  try {
+    const db = readDb();
+    const employeeId = String(req.body.employeeId || "");
+    const employee = (db.employees || []).find(e => String(e.id) === employeeId && e.active !== false);
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+    db.timeClockEntries ||= [];
+    const active = db.timeClockEntries.find(r => String(r.employeeId) === employeeId && !r.clockOut);
+    if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });
+    const row = { id: uuidv4(), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString(), clockInGeo: normalizeGeo(req.body.geo), clockOutGeo: null };
+    db.timeClockEntries.push(row);
+    recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
+    // Write directly to Postgres first, then update memory
+    await upsertClockEntry(row);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("employee_clocked_in", {});
+    res.json(row);
+  } catch (err) {
+    console.error("Clock-in error:", err);
+    res.status(500).json({ error: "Clock-in failed: " + err.message });
+  }
 });
 
-app.post("/time-clock/clock-out", (req, res) => {
-  const db = readDb();
-  const employeeId = String(req.body.employeeId || "");
-  const employee = (db.employees || []).find(e => String(e.id) === employeeId);
-  if (!employee) return res.status(404).json({ error: "Employee not found" });
-  const row = (db.timeClockEntries || []).find(r => String(r.employeeId) === employeeId && !r.clockOut);
-  if (!row) return res.status(400).json({ error: `${employee.name} is not currently clocked in` });
-  row.clockOut = new Date().toISOString();
-  row.clockOutGeo = normalizeGeo(req.body.geo);
-  recordRouteEvent(db, { action: "clock_out", employeeId: employee.id, employeeName: employee.name, date: row.date || todayString(), geo: req.body.geo });
-  row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
-  writeDb(db, "employee_clocked_out");
-  res.json(row);
+app.post("/time-clock/clock-out", async (req, res) => {
+  try {
+    const db = readDb();
+    const employeeId = String(req.body.employeeId || "");
+    const employee = (db.employees || []).find(e => String(e.id) === employeeId);
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+    const row = (db.timeClockEntries || []).find(r => String(r.employeeId) === employeeId && !r.clockOut);
+    if (!row) return res.status(400).json({ error: `${employee.name} is not currently clocked in` });
+    row.clockOut = new Date().toISOString();
+    row.clockOutGeo = normalizeGeo(req.body.geo);
+    recordRouteEvent(db, { action: "clock_out", employeeId: employee.id, employeeName: employee.name, date: row.date || todayString(), geo: req.body.geo });
+    row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
+    // Write directly to Postgres first, then update memory
+    await upsertClockEntry(row);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("employee_clocked_out", {});
+    res.json(row);
+  } catch (err) {
+    console.error("Clock-out error:", err);
+    res.status(500).json({ error: "Clock-out failed: " + err.message });
+  }
 });
 
 /* ---------- ROOT / HEALTH ---------- */
@@ -2413,3 +2474,4 @@ initializeDatabaseBackedState()
     console.error("Failed to initialize database-backed app:", err);
     process.exit(1);
   });
+
