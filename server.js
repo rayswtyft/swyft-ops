@@ -1370,7 +1370,19 @@ app.post("/daily-setup", (req, res) => {
     }
   }
 
-  writeDb(db, "daily_setup_updated", {});
+  // Write directly to Postgres, then update memory
+  try {
+    await query(
+      `INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start, assigned_employee_ids)
+       VALUES (1,$1,$2,$3,$4,$5)
+       ON CONFLICT (id) DO UPDATE SET setup_date=$1, crew_size=$2, assigned_employee_ids=$5`,
+      [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null, db.dailySetup.assignedEmployeeIds || []]
+    );
+  } catch (err) {
+    console.error("daily-setup persist error:", err);
+  }
+  memoryDb = normalizeDbShape(cloneDb(db));
+  broadcastUpdate("daily_setup_updated", {});
 
   res.json({
     ...db.dailySetup,
