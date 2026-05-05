@@ -1236,7 +1236,15 @@ async function qbRefreshIfNeeded(db) {
   qb.connected = true;
   qb.lastConnectedAt = new Date().toISOString();
 
-  writeDb(db, "quickbooks_refreshed");
+  try {
+    await query(
+      `INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at)
+       VALUES (1,$1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET connected=$1, realm_id=$2, access_token=$3, refresh_token=$4, expires_at=$5, refresh_expires_at=$6, last_connected_at=$7`,
+      [!!qb.connected, qb.realmId||null, qb.accessToken||null, qb.refreshToken||null, qb.expiresAt||null, qb.refreshExpiresAt||null, qb.lastConnectedAt||null]
+    );
+  } catch(e) { console.error("QB token persist error:", e); }
+  memoryDb = normalizeDbShape(cloneDb(db));
   return qb.accessToken;
 }
 
@@ -1378,11 +1386,16 @@ app.get("/settings", (_req, res) => {
   });
 });
 
-app.post("/settings/inventory-link", (req, res) => {
-  const db = readDb();
-  db.settings.inventoryLink = cleanString(req.body.inventoryLink);
-  writeDb(db, "settings_updated");
-  res.json({ inventoryLink: db.settings.inventoryLink });
+app.post("/settings/inventory-link", async (req, res) => {
+  try {
+    const db = readDb();
+    db.settings.inventoryLink = cleanString(req.body.inventoryLink);
+    await query(`INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`,
+      ["inventoryLink", { value: db.settings.inventoryLink }]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("settings_updated", {});
+    res.json({ inventoryLink: db.settings.inventoryLink });
+  } catch (err) { console.error("Settings update error:", err); res.status(500).json({ error: err.message }); }
 });
 
 /* ---------- DAILY SETUP / CHECKLIST ---------- */
@@ -1441,39 +1454,29 @@ app.post("/daily-setup", (req, res) => {
   });
 });
 
-app.post("/daily-lunch-start", (_req, res) => {
-  const db = readDb();
-  if (db.dailySetup.activeLunchStart) {
-    return res.status(400).json({ error: "Lunch already started" });
-  }
-
-  db.dailySetup.activeLunchStart = new Date().toISOString();
-  writeDb(db, "lunch_started");
-
-  res.json({
-    ...db.dailySetup,
-    lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
-  });
+app.post("/daily-lunch-start", async (_req, res) => {
+  try {
+    const db = readDb();
+    if (db.dailySetup.activeLunchStart) return res.status(400).json({ error: "Lunch already started" });
+    db.dailySetup.activeLunchStart = new Date().toISOString();
+    await query(`UPDATE daily_setup SET active_lunch_start=$1 WHERE id=1`, [db.dailySetup.activeLunchStart]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("lunch_started", {});
+    res.json({ ...db.dailySetup, lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []) });
+  } catch (err) { console.error("Lunch start error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/daily-lunch-end", (_req, res) => {
-  const db = readDb();
-  if (!db.dailySetup.activeLunchStart) {
-    return res.status(400).json({ error: "Lunch not started" });
-  }
-
-  db.dailySetup.lunchBreaks.push({
-    start: db.dailySetup.activeLunchStart,
-    end: new Date().toISOString()
-  });
-
-  db.dailySetup.activeLunchStart = null;
-  writeDb(db, "lunch_ended");
-
-  res.json({
-    ...db.dailySetup,
-    lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
-  });
+app.post("/daily-lunch-end", async (_req, res) => {
+  try {
+    const db = readDb();
+    if (!db.dailySetup.activeLunchStart) return res.status(400).json({ error: "Lunch not started" });
+    db.dailySetup.lunchBreaks.push({ start: db.dailySetup.activeLunchStart, end: new Date().toISOString() });
+    db.dailySetup.activeLunchStart = null;
+    await query(`UPDATE daily_setup SET lunch_breaks=$1, active_lunch_start=NULL WHERE id=1`, [JSON.stringify(db.dailySetup.lunchBreaks)]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("lunch_ended", {});
+    res.json({ ...db.dailySetup, lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []) });
+  } catch (err) { console.error("Lunch end error:", err); res.status(500).json({ error: err.message }); }
 });
 
 app.get("/daily-checklist", (req, res) => {
@@ -1715,17 +1718,21 @@ app.put("/jobs/:id", async (req, res) => {
   }
 });
 
-app.post("/jobs/reorder", (req, res) => {
-  const db = readDb();
-  const orderedIds = Array.isArray(req.body.orderedIds) ? req.body.orderedIds.map(String) : [];
-
-  orderedIds.forEach((id, index) => {
-    const job = db.jobs.find(j => String(j.id) === id);
-    if (job) job.sortOrder = index + 1;
-  });
-
-  writeDb(db, "jobs_reordered");
-  res.json({ ok: true });
+app.post("/jobs/reorder", async (req, res) => {
+  try {
+    const db = readDb();
+    const orderedIds = Array.isArray(req.body.orderedIds) ? req.body.orderedIds.map(String) : [];
+    orderedIds.forEach((id, index) => {
+      const job = db.jobs.find(j => String(j.id) === id);
+      if (job) job.sortOrder = index + 1;
+    });
+    await Promise.all(orderedIds.map((id, index) =>
+      query(`UPDATE jobs SET sort_order=$1 WHERE id=$2`, [index + 1, id])
+    ));
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("jobs_reordered", {});
+    res.json({ ok: true });
+  } catch (err) { console.error("Reorder error:", err); res.status(500).json({ error: err.message }); }
 });
 
 app.delete("/jobs/:id", async (req, res) => {
@@ -1866,36 +1873,41 @@ app.get("/route-history", (req, res) => {
   res.json(rows.sort((a,b) => String(a.at).localeCompare(String(b.at))));
 });
 
-app.post("/recurring-jobs", (req, res) => {
-  const db = readDb();
-  const startDate = cleanString(req.body.startDate) || db.dailySetup.date || todayString();
-  const dates = recurringDates(startDate, cleanString(req.body.frequency) || "weekly", req.body.count || 4);
-  const created = [];
-  for (const date of dates) {
-    const job = {
-      id: nextNumericId(db.jobs),
-      contractorId: String(req.body.contractorId || ""),
-      serviceAddress: cleanString(req.body.serviceAddress),
-      serviceDate: date,
-      notes: cleanString(req.body.notes),
-      createdAt: new Date().toISOString(),
-      services: Array.isArray(req.body.services) ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize)) : [],
-      photos: [],
-      sortOrder: nextSortOrderForDate(db, date),
-      deletedAt: null,
-      archivedAt: null,
-      finishedAt: null,
-      quickbooksStatus: "not_sent",
-      quickbooksInvoiceId: null,
-      openStatus: "recurring"
-    };
-    db.jobs.push(job);
-    created.push(job);
-  }
-  db.recurringJobs ||= [];
-  db.recurringJobs.push({ id: uuidv4(), createdAt: new Date().toISOString(), startDate, frequency: cleanString(req.body.frequency) || "weekly", count: created.length });
-  writeDb(db, "recurring_jobs_created", { count: created.length });
-  res.json({ ok: true, jobs: created.map(j => hydrateJob(j, db)) });
+app.post("/recurring-jobs", async (req, res) => {
+  try {
+    const db = readDb();
+    const startDate = cleanString(req.body.startDate) || db.dailySetup.date || todayString();
+    const dates = recurringDates(startDate, cleanString(req.body.frequency) || "weekly", req.body.count || 4);
+    const created = [];
+    for (const date of dates) {
+      const job = {
+        id: uuidv4(),
+        contractorId: String(req.body.contractorId || ""),
+        serviceAddress: cleanString(req.body.serviceAddress),
+        serviceDate: date,
+        notes: cleanString(req.body.notes),
+        createdAt: new Date().toISOString(),
+        services: Array.isArray(req.body.services) ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize)) : [],
+        photos: [],
+        sortOrder: nextSortOrderForDate(db, date),
+        deletedAt: null,
+        archivedAt: null,
+        finishedAt: null,
+        quickbooksStatus: "not_sent",
+        quickbooksInvoiceId: null,
+        openStatus: "recurring"
+      };
+      db.jobs.push(job);
+      created.push(job);
+    }
+    db.recurringJobs ||= [];
+    db.recurringJobs.push({ id: uuidv4(), createdAt: new Date().toISOString(), startDate, frequency: cleanString(req.body.frequency) || "weekly", count: created.length });
+    // Save all new jobs directly to Postgres
+    for (const j of created) await upsertJob(query, j);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("recurring_jobs_created", { count: created.length });
+    res.json({ ok: true, jobs: created.map(j => hydrateJob(j, db)) });
+  } catch (err) { console.error("Recurring jobs error:", err); res.status(500).json({ error: err.message }); }
 });
 
 /* ---------- SERVICE FLOW ---------- */
@@ -2002,7 +2014,15 @@ app.post("/jobs/:id/photos", upload.single("photo"), (req, res) => {
   };
 
   job.photos.push(photo);
-  writeDb(db, "photo_added", { jobId: job.id, photoId: photo.id });
+  try {
+    await query(
+      `INSERT INTO job_photos (id, job_id, url, tag, caption, created_at) VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (id) DO NOTHING`,
+      [String(photo.id), String(job.id), photo.url, photo.tag, photo.caption || "", photo.createdAt]
+    );
+  } catch (e) { console.error("Photo insert error:", e); }
+  memoryDb = normalizeDbShape(cloneDb(db));
+  broadcastUpdate("photo_added", { jobId: job.id, photoId: photo.id });
   res.json(photo);
 });
 
@@ -2019,7 +2039,11 @@ app.delete("/jobs/:jobId/photos/:photoId", (req, res) => {
   if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 
   job.photos = (job.photos || []).filter(p => String(p.id) !== String(req.params.photoId));
-  writeDb(db, "photo_deleted", { jobId: job.id, photoId: req.params.photoId });
+  try {
+    await query(`DELETE FROM job_photos WHERE id=$1`, [String(req.params.photoId)]);
+  } catch (e) { console.error("Photo delete error:", e); }
+  memoryDb = normalizeDbShape(cloneDb(db));
+  broadcastUpdate("photo_deleted", { jobId: job.id, photoId: req.params.photoId });
   res.json({ ok: true });
 });
 
@@ -2224,7 +2248,8 @@ app.post("/finish-day", async (req, res) => {
     deductInventoryForJobIfNeeded(db, raw);
   }
 
-  writeDb(db, "finish_day_started");
+  // Update inventory in memory immediately; full persist happens at day_finished
+  memoryDb = normalizeDbShape(cloneDb(db));
 
   const hydratedJobs = finishedRawJobs.map(j => hydrateJob(j, db));
 
@@ -2240,7 +2265,12 @@ app.post("/finish-day", async (req, res) => {
       if (dbJob) dbJob.archivedAt = new Date().toISOString();
     });
 
-    writeDb(db2, "day_finished");
+    // Directly archive each finished job in Postgres
+    for (const j of finishedRawJobs) {
+      try { await query(`UPDATE jobs SET archived_at=$1 WHERE id=$2`, [new Date().toISOString(), String(j.id)]); } catch(e) { console.error("Archive job on finish-day error:", e); }
+    }
+    memoryDb = normalizeDbShape(cloneDb(db2));
+    broadcastUpdate("day_finished", {});
 
     res.json({
       finishedJobs: finishedRawJobs.length,
@@ -2435,7 +2465,16 @@ app.get("/qb/callback", async (req, res) => {
       lastConnectedAt: new Date().toISOString()
     };
 
-    writeDb(db, "qb_connected");
+    try {
+    await query(
+      `INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at)
+       VALUES (1,$1,$2,$3,$4,$5,$6,$7)
+       ON CONFLICT (id) DO UPDATE SET connected=$1, realm_id=$2, access_token=$3, refresh_token=$4, expires_at=$5, refresh_expires_at=$6, last_connected_at=$7`,
+      [!!qb.connected, qb.realmId||null, qb.accessToken||null, qb.refreshToken||null, qb.expiresAt||null, qb.refreshExpiresAt||null, qb.lastConnectedAt||null]
+    );
+    } catch(e) { console.error("QB connect persist error:", e); }
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("qb_connected", {});
     res.redirect("/");
   } catch (e) {
     console.error(e.response?.data || e.message);
@@ -2491,7 +2530,13 @@ app.post("/qb/send-day", async (req, res) => {
     }
   }
 
-  writeDb(db, "qb_sent");
+  // Persist QB status changes for each job directly
+  for (const r of results) {
+    try { await query(`UPDATE jobs SET quickbooks_status=$1, quickbooks_invoice_id=$2 WHERE id=$3`,
+      [r.success ? "sent" : "error", r.invoiceId||null, String(r.id)]); } catch(e) {}
+  }
+  memoryDb = normalizeDbShape(cloneDb(db));
+  broadcastUpdate("qb_sent", {});
   res.json({ sent, failed, results });
 });
 
@@ -2503,33 +2548,46 @@ app.get("/employees", (_req, res) => {
   res.json((db.employees || []).filter(e => e.active !== false));
 });
 
-app.post("/employees", (req, res) => {
-  const db = readDb();
-  const employee = { id: nextNumericId(db.employees || []), name: cleanString(req.body.name), active: true, createdAt: new Date().toISOString() };
-  if (!employee.name) return res.status(400).json({ error: "Employee name is required" });
-  db.employees ||= [];
-  db.employees.push(employee);
-  writeDb(db, "employee_added");
-  res.json(employee);
+app.post("/employees", async (req, res) => {
+  try {
+    const db = readDb();
+    const employee = { id: uuidv4(), name: cleanString(req.body.name), active: true, createdAt: new Date().toISOString() };
+    if (!employee.name) return res.status(400).json({ error: "Employee name is required" });
+    db.employees ||= [];
+    db.employees.push(employee);
+    await query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`,
+      [String(employee.id), employee.name, true, employee.createdAt]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("employee_added", {});
+    res.json(employee);
+  } catch (err) { console.error("Add employee error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.put("/employees/:id", (req, res) => {
-  const db = readDb();
-  const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
-  if (!employee) return res.status(404).json({ error: "Employee not found" });
-  if (req.body.name !== undefined) employee.name = cleanString(req.body.name);
-  if (req.body.active !== undefined) employee.active = !!req.body.active;
-  writeDb(db, "employee_updated");
-  res.json(employee);
+app.put("/employees/:id", async (req, res) => {
+  try {
+    const db = readDb();
+    const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+    if (req.body.name !== undefined) employee.name = cleanString(req.body.name);
+    if (req.body.active !== undefined) employee.active = !!req.body.active;
+    await query(`UPDATE employees SET name=$1, active=$2 WHERE id=$3`, [employee.name, employee.active, String(employee.id)]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("employee_updated", {});
+    res.json(employee);
+  } catch (err) { console.error("Update employee error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.delete("/employees/:id", (req, res) => {
-  const db = readDb();
-  const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
-  if (!employee) return res.status(404).json({ error: "Employee not found" });
-  employee.active = false;
-  writeDb(db, "employee_removed");
-  res.json({ ok: true });
+app.delete("/employees/:id", async (req, res) => {
+  try {
+    const db = readDb();
+    const employee = (db.employees || []).find(e => String(e.id) === String(req.params.id));
+    if (!employee) return res.status(404).json({ error: "Employee not found" });
+    employee.active = false;
+    await query(`UPDATE employees SET active=false WHERE id=$1`, [String(employee.id)]);
+    memoryDb = normalizeDbShape(cloneDb(db));
+    broadcastUpdate("employee_removed", {});
+    res.json({ ok: true });
+  } catch (err) { console.error("Remove employee error:", err); res.status(500).json({ error: err.message }); }
 });
 
 app.get("/time-clock", (req, res) => {
