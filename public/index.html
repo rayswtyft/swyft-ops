@@ -1879,79 +1879,47 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       `;
 
     }
-
-
-
-    function renderInventoryModalList(){
-
 function renderInventoryModalList(){
   $("inventoryModalList").innerHTML = `
     ${inventoryEditMode ? `
       <div class="service-card">
         <h3>Add Inventory Item</h3>
-
         <input id="newInvName" placeholder="Item name" />
-
         <select id="newInvCategory">
           <option value="supply">Supply</option>
           <option value="tool">Tool</option>
         </select>
-
         <select id="newInvLocation">
           <option value="van">Van</option>
           <option value="truck">Truck</option>
           <option value="warehouse">Warehouse</option>
         </select>
-
         <input id="newInvQty" type="number" step="1" value="1" placeholder="Quantity" />
-
         <input id="newInvUnit" value="pieces" placeholder="Unit" />
-
         <input id="newInvReorder" type="number" step="1" placeholder="Reorder point" />
-
         <button class="green" onclick="addInventoryItem()">Add Item</button>
       </div>
     ` : ``}
 
     ${inventory.map(item => `
-
-        <div class="inventory-row ${isInventoryLow(item) ? "low-stock" : ""}">
-
-          <strong>${item.name}</strong>
-
-          <div class="muted">
-
-            ${item.displayUnit ? `${item.displayQuantity} ${item.displayUnit}` : `${item.quantity} ${item.unit}`}
-
-            ${item.reorderPoint !== null && item.reorderPoint !== undefined ? ` • Reorder at ${item.displayDivisor ? Number(item.reorderPoint / item.displayDivisor).toFixed(2) : item.reorderPoint}` : ""}
-
-          </div>
-
-          ${inventoryEditMode ? `
-
-            <div class="row" style="margin-top:8px;">
-
-              <input id="inv-${item.id || item.key}" type="number" step="0.25" value="${item.quantity}" />
-
-              <div></div>
-
-            </div>
-
-          ` : ``}
-
+      <div class="inventory-row ${isInventoryLow(item) ? "low-stock" : ""}">
+        <strong>${item.name}</strong>
+        <div class="muted">
+          ${item.displayUnit ? `${item.displayQuantity} ${item.displayUnit}` : `${item.quantity} ${item.unit}`}
         </div>
+        ${inventoryEditMode ? `
+          <div class="row" style="margin-top:8px;">
+            <input id="inv-${item.id || item.key}" type="number" step="0.25" value="${item.quantity}" />
+            <div></div>
+          </div>
+        ` : ``}
+      </div>
+    `).join("")}
+  `;
 
-      `).join("");
-
-
-
-      $("inventorySaveBtn").classList.toggle("hidden", !inventoryEditMode);
-
-      $("inventoryEditBtn").innerText = inventoryEditMode ? "Cancel Edit" : "Edit Inventory";
-
-    }
-
-
+  $("inventorySaveBtn").classList.toggle("hidden", !inventoryEditMode);
+  $("inventoryEditBtn").innerText = inventoryEditMode ? "Cancel Edit" : "Edit Inventory";
+}
 
     function openInventoryModal(){
 
