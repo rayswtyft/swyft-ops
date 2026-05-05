@@ -4778,14 +4778,7 @@ async function saveScheduleCrew() {
       const employee = crew.find(e => String(e.id) === String(employeeId));
       if (employee?.clockedIn) return alert((employee?.name || "Employee") + " is already clocked in");
 
-      // Biometric check if enrolled
-      const creds = getBioCreds();
-      const hasBio = !!(creds[String(employeeId)]);
-      if (hasBio) {
-        const verified = await verifyBiometric(employeeId);
-        if (verified === false) return alert("Biometric verification failed. Clock-in denied.");
-        if (verified === null) { /* not available, fall through */ }
-      }
+      // No PIN or biometric required - tap name to clock in
 
       const res = await fetch("/time-clock/clock-in", {
         method:"POST",
@@ -4878,22 +4871,15 @@ async function saveScheduleCrew() {
     }
 
     function renderEmployeeManagerList(){
-      const creds = getBioCreds();
       $("employeeManagerList").innerHTML = employees.length ? employees.map(e => {
-        const enrolled = !!creds[String(e.id)];
         return `
         <div class="employee-admin-row">
           <strong>${e.name}</strong>
-          ${enrolled ? '<div style="color:#16a34a;font-size:13px;margin-top:4px;">✅ Touch ID enrolled on this device</div>' : '<div style="color:#f59e0b;font-size:13px;margin-top:4px;">⚠️ No biometric — anyone can clock in as this employee</div>'}
           <div class="row" style="margin-top:8px;">
             <input id="employee-edit-${e.id}" value="${e.name}" />
             <button class="green" onclick="saveEmployeeName(${e.id})">Save</button>
           </div>
           <div class="row" style="margin-top:8px;">
-            ${enrolled
-              ? `<button class="orange" onclick="removeEmployeeBio(${e.id}, '${e.name}')">Remove Fingerprint</button>`
-              : `<button class="secondary" onclick="enrollEmployeeBio(${e.id}, '${e.name}')">Enroll Fingerprint 👆</button>`
-            }
             <button class="red" onclick="removeEmployee(${e.id})">Remove Employee</button>
           </div>
         </div>
