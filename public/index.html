@@ -1314,17 +1314,24 @@
 
 
 
-    const junkOptions = [
 
-      { label: "Quarter load", price: 250 },
+const junkRemovalOptions = [
+  { label: "Quarter load", price: 175 },
+  { label: "Half load", price: 325 },
+  { label: "3/4 load", price: 550 },
+  { label: "Full load", price: 750 }
+];
 
-      { label: "Half load", price: 500 },
+const dumpTruckOptions = [
+  { label: "Quarter load", price: 250 },
+  { label: "Half load", price: 500 },
+  { label: "3/4 load", price: 750 },
+  { label: "Full load", price: 1000 }
+];
 
-      { label: "3/4 load", price: 750 },
-
-      { label: "Full load", price: 1000 }
-
-    ];
+function junkOptionsForService(service){
+  return service.subtype === "Dump truck removal" ? dumpTruckOptions : junkRemovalOptions;
+}
 
 
 
@@ -2444,7 +2451,7 @@ function applySavedAddress(){
 
       if (key === "junkLoad") {
 
-        const match = junkOptions.find(x => x.label === value);
+        const match = junkOptionsForService(arr[index]).find(x => x.label === value);
 
         arr[index].junkPrice = match ? match.price : 175;
 
@@ -2546,16 +2553,14 @@ function applySavedAddress(){
 
 
 
-          ${s.category === "Junk" ? `
-
-            <select onchange="${fnPrefix}(${i}, 'junkLoad', this.value)">
-
-              ${junkOptions.map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label} - ${fmtMoney(o.price)}</option>`).join("")}
-
-            </select>
-
-          ` : ""}
-
+         
+${s.category === "Junk" && currentMode === "van" ? `
+  <select onchange="${fnPrefix}(${i}, 'junkLoad', this.value)">
+    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label} - ${fmtMoney(o.price)}</option>`).join("")}
+  </select>
+` : s.category === "Junk" ? `
+  <div class="muted">Load amount will be selected in the Van App.</div>
+` : ""}
 
 
           ${isConcrete(s) ? `
@@ -2953,7 +2958,7 @@ $("manualAddress").value = "";
 
                   <select id="editJunk-${i}">
 
-                    ${junkOptions.map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label}</option>`).join("")}
+                    ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label}</option>`).join("")}
 
                   </select>
 
@@ -3221,7 +3226,7 @@ $("manualAddress").value = "";
 
         const junkLoad = $(`editJunk-${i}`)?.value || s.junkLoad;
 
-        const junkMatch = junkOptions.find(x => x.label === junkLoad);
+        const junkMatch = junkOptionsForService(arr[index]).find(x => x.label === junkLoad);
 
 
 
