@@ -3449,21 +3449,21 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
             ${isHourly(s) ? `
 
-              <div class="row" style="margin-top:10px;">
+              ${!s.startTime ? `<div class="row" style="margin-top:10px;">
 
                 <button class="green" onclick="serviceAction('/jobs/${job.id}/services/${i}/start')">Start Service</button>
 
                 <div></div>
 
-              </div>
+              </div>` : ""}
 
-              <div class="row" style="margin-top:10px;">
+              ${s.startTime && !s.endTime ? `<div class="row" style="margin-top:10px;">
 
-                <button class="red" onclick="openMaterialsModal(${job.id}, ${i})">Stop Job</button>
+                <button class="red" onclick="openMaterialsModal('${job.id}', ${i})">Stop Job</button>
 
                 ${currentMode !== "van" ? `<button class="secondary" onclick="window.open('/invoice/${job.id}', '_blank')">Invoice</button>` : `<div></div>`}
 
-              </div>
+              </div>` : ""}
 
             ` : ""}
 
@@ -3893,7 +3893,7 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
     function openMaterialsModal(jobId, serviceIndex){
 
-      const job = jobs.find(j => j.id === jobId);
+      const job = jobs.find(j => String(j.id) === String(jobId));
 
       const service = job?.services?.[serviceIndex];
 
