@@ -524,7 +524,51 @@
     }
     .inventory-topbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
 
-    </style>
+    
+    .inv-tab {
+      background: #f1f5f9;
+      color: #64748b;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+      position: relative;
+    }
+    .inv-tab.active {
+      background: #1e40af;
+      color: white;
+    }
+    .low-badge {
+      background: #dc2626;
+      color: white;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border-radius: 10px;
+      position: absolute;
+      top: -4px;
+      right: -4px;
+    }
+    .inventory-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    #invAdjustModal .modal-content {
+      max-width: 360px;
+    }
+    .check-row {
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .check-row.checked {
+      background: #f0fdf4;
+    }
+</style>
 
 </head>
 
@@ -682,13 +726,13 @@
 
 
         <div class="card">
-
-          <h2>Daily Checklist</h2>
-
+          <h2>📋 Daily Checklist</h2>
           <div id="checkMeta" class="muted">Loading checklist…</div>
-
+          <div style="display:flex;gap:8px;margin:10px 0;" id="checklistTabs">
+            <button id="clTab-morning" class="inv-tab active" onclick="setChecklistTab('morning')">☀️ Morning</button>
+            <button id="clTab-eod" class="inv-tab" onclick="setChecklistTab('eod')">🌙 End of Day</button>
+          </div>
           <div id="dailyChecklist"></div>
-
         </div>
 
         <div class="card">
@@ -1157,7 +1201,7 @@
       </div>
 
       <!-- Location Tabs -->
-      <div style="display:flex;gap:8px;margin:12px 0;">
+      <div style="display:flex;gap:8px;margin:12px 0;flex-wrap:wrap;">
         <button id="invTab-all" class="inv-tab active" onclick="setInvTab('all')">All</button>
         <button id="invTab-van" class="inv-tab" onclick="setInvTab('van')">🚐 Van <span id="invLow-van" class="low-badge hidden"></span></button>
         <button id="invTab-truck" class="inv-tab" onclick="setInvTab('truck')">🚛 Truck <span id="invLow-truck" class="low-badge hidden"></span></button>
@@ -1169,21 +1213,34 @@
         <h3>Add Inventory Item</h3>
         <input id="newInvName" placeholder="Item name" />
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <select id="newInvCategory" style="flex:1;min-width:120px;">
+          <select id="newInvCategory" style="flex:1;min-width:120px;" onchange="updateNewInvType()">
             <option value="supply">Supply</option>
             <option value="tool">Tool</option>
             <option value="equipment">Equipment</option>
           </select>
-          <select id="newInvLocation" style="flex:1;min-width:120px;">
-            <option value="van">Van</option>
-            <option value="truck">Truck</option>
-            <option value="warehouse">Warehouse</option>
+          <select id="newInvType" style="flex:1;min-width:120px;">
+            <option value="consumable">Consumable</option>
+            <option value="tool">Tool (reusable)</option>
           </select>
         </div>
+        <div style="margin-top:8px;font-weight:600;font-size:13px;color:#475569;">Stock by location (leave blank if not stored there)</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+          <div style="flex:1;min-width:90px;">
+            <label style="font-size:12px;color:#64748b;">🚐 Van</label>
+            <input id="newInvQtyVan" type="number" step="1" placeholder="Qty" style="width:100%;" />
+          </div>
+          <div style="flex:1;min-width:90px;">
+            <label style="font-size:12px;color:#64748b;">🚛 Truck</label>
+            <input id="newInvQtyTruck" type="number" step="1" placeholder="Qty" style="width:100%;" />
+          </div>
+          <div style="flex:1;min-width:90px;">
+            <label style="font-size:12px;color:#64748b;">🏭 Warehouse</label>
+            <input id="newInvQtyWarehouse" type="number" step="1" placeholder="Qty" style="width:100%;" />
+          </div>
+        </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <input id="newInvQty" type="number" step="1" value="" placeholder="Qty (blank = not tracked)" style="flex:1;min-width:80px;" />
           <input id="newInvUnit" value="pieces" placeholder="Unit" style="flex:1;min-width:80px;" />
-          <input id="newInvReorder" type="number" step="1" placeholder="Reorder at" style="flex:1;min-width:80px;" />
+          <input id="newInvReorder" type="number" step="1" placeholder="Reorder at (total)" style="flex:2;min-width:80px;" />
         </div>
         <div style="display:flex;gap:8px;margin-top:10px;">
           <button class="green" onclick="addInventoryItem()">Add Item</button>
@@ -1195,24 +1252,33 @@
     </div>
   </div>
 
-  <!-- Inventory Adjust Modal (quick +/-) -->
+  <!-- Inventory Adjust Modal (quick +/- per location) -->
   <div id="invAdjustModal" class="modal hidden">
-    <div class="modal-content" style="max-width:340px;">
+    <div class="modal-content" style="max-width:360px;">
       <h2 id="invAdjTitle">Adjust Stock</h2>
       <div class="muted" id="invAdjCurrent"></div>
-      <div style="display:flex;gap:12px;align-items:center;justify-content:center;margin:20px 0;">
+      <!-- Location selector for adjust -->
+      <div style="margin:12px 0;">
+        <label style="font-size:13px;font-weight:600;">Location</label>
+        <select id="invAdjLocation" style="margin-top:4px;" onchange="updateAdjLocationDisplay()">
+          <option value="van">🚐 Van</option>
+          <option value="truck">🚛 Truck</option>
+          <option value="warehouse">🏭 Warehouse</option>
+        </select>
+        <div id="invAdjLocationStock" class="muted" style="margin-top:4px;font-size:13px;"></div>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;justify-content:center;margin:16px 0;">
         <button class="orange" style="font-size:28px;width:56px;height:56px;border-radius:50%;padding:0;" onclick="invAdjStep(-1)">−</button>
         <input id="invAdjQty" type="number" step="1" value="1" style="width:80px;text-align:center;font-size:24px;font-weight:700;" />
         <button class="green" style="font-size:28px;width:56px;height:56px;border-radius:50%;padding:0;" onclick="invAdjStep(1)">+</button>
       </div>
       <div style="display:flex;gap:8px;">
-        <button class="red" style="flex:1;" onclick="commitInvAdj(-1)">Remove</button>
+        <button class="orange" style="flex:1;" onclick="commitInvAdj(-1)">Remove</button>
         <button class="green" style="flex:1;" onclick="commitInvAdj(1)">Add</button>
-        <button class="secondary" style="flex:1;" onclick="closeInvAdjModal()">Cancel</button>
       </div>
+      <button class="secondary" style="margin-top:8px;width:100%;" onclick="closeInvAdjModal()">Cancel</button>
     </div>
   </div>
-
 
 
   <div id="materialsModal" class="modal hidden">
@@ -1371,6 +1437,7 @@
     let checklistSaving = false;
     let lastChecklistTouch = 0;  // timestamp of last checklist interaction
 
+    let todayCrew = [];
     let selectedJobId = null;
 
     let editingJobId = null;
@@ -1830,51 +1897,199 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
 
-    async function loadChecklist(force){
+    let checklistTab = "morning";
 
-      const date = currentDate();
-
-      const res = await fetch(`/daily-checklist?date=${encodeURIComponent(date)}`);
-
-      const data = await res.json();
-
-
-
-      const checkedCount = data.items.filter(i => i.checked).length;
-
-      $("checkMeta").innerText = `${checkedCount}/${data.items.length} checked`;
-
-
-
-      if (!data.items.length) {
-
-        $("dailyChecklist").innerHTML = `<div class="muted" style="margin-top:10px;">No checklist items yet for this day.</div>`;
-
-        return;
-
-      }
-
-      // Don't re-render if user is actively interacting with checklist (prevents checkbox flicker)
-      // Also block for 10 seconds after any checklist touch (mobile checkboxes lose focus instantly)
-      const checklistRecentlyTouched = (Date.now() - lastChecklistTouch) < 10000;
-      if (!force && (checklistSaving || checklistRecentlyTouched || (document.activeElement && $("dailyChecklist").contains(document.activeElement)))) return;
-
-      $("dailyChecklist").innerHTML = `
-        <button class="secondary" onclick="toggleChecklistPanel()">${checklistExpanded ? "Hide Checklist" : "View Checklist"}</button>
-        ${checklistExpanded ? `
-          <div class="check-shell">
-            ${data.items.map(item => `
-              <label class="check-row ${item.checked ? "checked" : ""}">
-                <input type="checkbox" ${item.checked ? "checked" : ""} onchange="toggleChecklist(${JSON.stringify(data.date)}, ${JSON.stringify(item.item)}, this.checked)" />
-                <span class="check-label">${item.item}</span>
-              </label>
-            `).join("")}
-          </div>
-        ` : `<div class="muted" style="margin-top:10px;">Checklist is collapsed after beginning-of-day setup.</div>`}
-      `;
-
+    function setChecklistTab(tab) {
+      checklistTab = tab;
+      ["morning","eod"].forEach(t => {
+        document.getElementById("clTab-"+t)?.classList.toggle("active", t === tab);
+      });
+      loadChecklist(true);
     }
 
+    async function loadChecklist(force){
+      const date = currentDate();
+      lastChecklistTouch = Date.now(); // prevent race on tab switch
+      try {
+        const res = await fetch("/checklist-enhanced?date=" + encodeURIComponent(date));
+        const data = await res.json();
+        const items = data.items || [];
+
+        const morningDone = items.filter(i => i.morning_checked).length;
+        const eodDone = items.filter(i => i.eod_checked).length;
+        const metaEl = document.getElementById("checkMeta");
+        if (metaEl) {
+          if (checklistTab === "morning") metaEl.textContent = morningDone + "/" + items.length + " confirmed";
+          else metaEl.textContent = eodDone + "/" + items.length + " accounted for";
+        }
+
+        if (!items.length) {
+          document.getElementById("dailyChecklist").innerHTML = '<div class="muted" style="margin-top:10px;">No jobs scheduled today — checklist will auto-populate when jobs are added.</div>';
+          return;
+        }
+
+        renderChecklist(date, items);
+      } catch(err) {
+        console.error("Checklist load error", err);
+      }
+    }
+
+    function renderChecklist(date, items) {
+      const el = document.getElementById("dailyChecklist");
+      if (!el) return;
+
+      if (checklistTab === "morning") {
+        // Morning: tools = confirm in van, consumables from warehouse = flag as "needs loading"
+        const tools = items.filter(i => i.item_type === "tool");
+        const consumables = items.filter(i => i.item_type !== "tool");
+        const needsLoad = consumables.filter(i => i.needsLoading);
+        const inVan = consumables.filter(i => !i.needsLoading);
+
+        let html = "";
+
+        if (tools.length) {
+          html += '<div style="font-weight:700;margin:10px 0 6px;font-size:13px;color:#475569;">🔧 TOOLS — confirm in van</div>';
+          html += tools.map(item => renderMorningItem(date, item)).join("");
+        }
+        if (needsLoad.length) {
+          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#b45309;">📦 LOAD FROM WAREHOUSE</div>';
+          html += needsLoad.map(item => renderMorningItem(date, item, true)).join("");
+        }
+        if (inVan.length) {
+          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#475569;">🧴 SUPPLIES — confirm in van</div>';
+          html += inVan.map(item => renderMorningItem(date, item)).join("");
+        }
+        el.innerHTML = html;
+      } else {
+        // EOD: tools = confirm back in van, consumables = record how much was used
+        const tools = items.filter(i => i.item_type === "tool");
+        const consumables = items.filter(i => i.item_type !== "tool");
+
+        let html = "";
+        if (tools.length) {
+          html += '<div style="font-weight:700;margin:10px 0 6px;font-size:13px;color:#475569;">🔧 TOOLS — confirm back in van</div>';
+          html += tools.map(item => renderEodToolItem(date, item)).join("");
+        }
+        if (consumables.length) {
+          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#475569;">🧴 SUPPLIES — record what was used</div>';
+          html += consumables.map(item => renderEodConsumedItem(date, item)).join("");
+        }
+        html += '<div style="margin-top:16px;"><button class="green" onclick="saveEodChecklist()">Save & Update Inventory</button></div>';
+        el.innerHTML = html;
+      }
+    }
+
+    function renderMorningItem(date, item, needsLoad) {
+      const checked = item.morning_checked;
+      const borderColor = needsLoad ? "#f59e0b" : (checked ? "#16a34a" : "#e2e8f0");
+      const safeItem = item.item.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+      return `<div class="check-row ${checked?"checked":""}" style="border:1px solid ${borderColor};border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;"
+        data-date="${date}" data-item="${safeItem}" data-checked="${checked}" onclick="handleChecklistTap(this,'morning')">
+        <input type="checkbox" ${checked?"checked":""} style="width:20px;height:20px;pointer-events:none;" />
+        <span style="flex:1;">${needsLoad?"🚚 ":""}${item.item}</span>
+        ${needsLoad?'<span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 6px;border-radius:8px;">needs loading</span>':""}
+      </div>`;
+    }
+
+    function renderEodToolItem(date, item) {
+      const checked = item.eod_checked;
+      const safeItem = item.item.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+      return `<div class="check-row ${checked?"checked":""}" style="border:1px solid ${checked?"#16a34a":"#e2e8f0"};border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;"
+        data-date="${date}" data-item="${safeItem}" data-checked="${checked}" onclick="handleChecklistTap(this,'eod')">
+        <input type="checkbox" ${checked?"checked":""} style="width:20px;height:20px;pointer-events:none;" />
+        <span>${item.item}</span>
+      </div>`;
+    }
+
+    function renderEodConsumedItem(date, item) {
+      const inputId = "eod-qty-" + item.item.replace(/[^a-z0-9]/gi, "_");
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #e2e8f0;border-radius:8px;margin-bottom:6px;">' +
+        '<span style="flex:1;">' + item.item + '</span>' +
+        '<input type="number" id="' + inputId + '" min="0" step="1" placeholder="0 used" value="' + (item.eod_qty_used || "") + '" style="width:80px;text-align:center;" />' +
+        '<span class="muted" style="font-size:12px;">' + (item.unit || "") + '</span>' +
+      '</div>';
+    }
+
+    async function toggleMorningItem(date, itemName, currentlyChecked) {
+      lastChecklistTouch = Date.now();
+      const newChecked = !currentlyChecked;
+      await fetch("/checklist-toggle-v2", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ date, item: itemName, checked: newChecked, checklist_type: "morning" })
+      });
+      await loadChecklist(true);
+    }
+
+    async function toggleEodTool(date, itemName, currentlyChecked) {
+      lastChecklistTouch = Date.now();
+      const newChecked = !currentlyChecked;
+      await fetch("/checklist-toggle-v2", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ date, item: itemName, checked: newChecked, checklist_type: "eod" })
+      });
+      await loadChecklist(true);
+    }
+
+    async function saveEodChecklist() {
+      const date = currentDate();
+      lastChecklistTouch = Date.now();
+      const res = await fetch("/checklist-enhanced?date=" + encodeURIComponent(date));
+      const data = await res.json();
+      const consumables = (data.items || []).filter(i => i.item_type !== "tool");
+
+      const saves = consumables.map(async item => {
+        const inputId = "eod-qty-" + item.item.replace(/[^a-z0-9]/gi, "_");
+        const el = document.getElementById(inputId);
+        const qtyUsed = el ? Number(el.value || 0) : 0;
+        if (qtyUsed > 0) {
+          await fetch("/checklist-toggle-v2", {
+            method: "POST",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ date, item: item.item, checked: true, checklist_type: "eod", qty_used: qtyUsed })
+          });
+        }
+      });
+      await Promise.all(saves);
+      await loadInventory();
+      await loadChecklist(true);
+      alert("End of day saved! Inventory updated.");
+    }
+
+    async function handleChecklistTap(el, clType) {
+      const date = el.dataset.date;
+      const item = el.dataset.item;
+      const currentlyChecked = el.dataset.checked === "true";
+      const newChecked = !currentlyChecked;
+      el.dataset.checked = newChecked;
+      const checkbox = el.querySelector("input[type=checkbox]");
+      if (checkbox) checkbox.checked = newChecked;
+      el.classList.toggle("checked", newChecked);
+      el.style.borderColor = newChecked ? "#16a34a" : "#e2e8f0";
+      lastChecklistTouch = Date.now();
+      await fetch("/checklist-toggle-v2", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ date, item, checked: newChecked, checklist_type: clType })
+      });
+    }
+
+    function toggleChecklistPanel() {
+      checklistExpanded = !checklistExpanded;
+      localStorage.setItem("swyftChecklistExpanded", checklistExpanded);
+      loadChecklist(true);
+    }
+
+    // Legacy alias
+    async function toggleChecklist(date, item, checked) {
+      await fetch("/daily-checklist/toggle", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ date, item, checked })
+      });
+      await loadChecklist(true);
+    }
 
 
     async function loadDashboard(){
@@ -1938,22 +2153,12 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
     function renderLowStockList(){
       const low = inventory.filter(isInventoryLow);
-      if (!low.length) {
-        const el = document.getElementById("lowStockList");
-        if (el) el.innerHTML = `<div class="muted">No low-stock items.</div>`;
-        return;
-      }
       const el = document.getElementById("lowStockList");
-      if (el) el.innerHTML = `
-        <div class="alert-row low-stock">
-          <strong>Low stock alerts</strong>
-          ${low.map(item => `
-            <div class="muted" style="margin-top:8px;">
-              ${item.name} — ${item.displayUnit ? item.displayQuantity+' '+item.displayUnit : item.quantity+' '+item.unit}
-            </div>
-          `).join("")}
-        </div>
-      `;
+      if (!el) return;
+      if (!low.length) { el.innerHTML = '<div class="muted">No low-stock items.</div>'; return; }
+      el.innerHTML = '<div class="alert-row low-stock"><strong>Low stock alerts</strong>' +
+        low.map(item => '<div class="muted" style="margin-top:8px;">' + item.name + ' — ' + (item.displayQuantity ?? item.quantity) + ' ' + (item.displayUnit || item.unit || '') + '</div>').join("") +
+        '</div>';
     }
 
     // ---- INVENTORY REDESIGN ----
@@ -1971,7 +2176,16 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
     function filteredInventory() {
       if (invTab === "all") return inventory;
-      return inventory.filter(i => (i.location || "van") === invTab);
+      return inventory.filter(i => {
+        const stock = i.stock || {};
+        return stock[invTab] != null && stock[invTab] > 0 ||
+               (i.location || "van") === invTab;
+      });
+    }
+
+    function stockForLocation(item, loc) {
+      if (item.stock && item.stock[loc] !== undefined && item.stock[loc] !== null) return item.stock[loc];
+      return (item.location || "van") === loc ? item.quantity : 0;
     }
 
     function renderInventoryModalList() {
@@ -1979,47 +2193,73 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       ["van","truck","warehouse"].forEach(loc => {
         const badge = document.getElementById("invLow-"+loc);
         if (!badge) return;
-        const cnt = inventory.filter(i => (i.location||"van")===loc && isInventoryLow(i)).length;
+        const cnt = inventory.filter(i => isInventoryLow(i) && stockForLocation(i, loc) != null).length;
         badge.textContent = cnt;
         badge.classList.toggle("hidden", cnt === 0);
       });
       const totalLow = inventory.filter(i => isInventoryLow(i)).length;
       const lb = document.getElementById("invLowBadge");
-      if (lb) { lb.textContent = totalLow > 0 ? "⚠️ "+totalLow+" item"+(totalLow>1?"s":"")+" low on stock" : ""; lb.style.color = totalLow > 0 ? "#dc2626" : ""; }
+      if (lb) {
+        lb.textContent = totalLow > 0 ? "⚠️ "+totalLow+" item"+(totalLow>1?"s":"")+" low" : "";
+        lb.style.color = totalLow > 0 ? "#dc2626" : "";
+      }
       const listEl = document.getElementById("inventoryModalList");
       if (!listEl) return;
-      if (!items.length) { listEl.innerHTML = `<div class="muted" style="margin-top:16px;">No items in this location.</div>`; return; }
+      if (!items.length) { listEl.innerHTML = '<div class="muted" style="margin-top:16px;">No items in this location.</div>'; return; }
+
+      const locationLabels = { van: "🚐 Van", truck: "🚛 Truck", warehouse: "🏭 Warehouse" };
+
       listEl.innerHTML = items.map(item => {
         const isLow = isInventoryLow(item);
-        const qty = item.displayQuantity ?? item.quantity;
-        const unit = item.displayUnit || item.unit || "";
-        const hasQty = item.quantity != null;
-        return `<div class="inventory-row ${isLow ? "low-stock" : ""}" style="margin-bottom:10px;">
-          ${invEditMode ? `
-            <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-              <input value="${item.name}" id="inv-name-${item.id}" style="flex:2;min-width:120px;" />
-              <select id="inv-loc-${item.id}" style="flex:1;min-width:100px;">
-                <option value="van" ${(item.location||"van")==="van"?"selected":""}>Van</option>
-                <option value="truck" ${item.location==="truck"?"selected":""}>Truck</option>
-                <option value="warehouse" ${item.location==="warehouse"?"selected":""}>Warehouse</option>
-              </select>
-              <input type="number" step="0.25" value="${item.quantity??""}" id="inv-qty-${item.id}" placeholder="Qty" style="width:70px;" />
-              <input value="${item.unit||""}" id="inv-unit-${item.id}" placeholder="Unit" style="width:70px;" />
-              <input type="number" step="1" value="${item.reorderPoint??""}" id="inv-reorder-${item.id}" placeholder="Reorder at" style="width:80px;" />
-              <button class="red" style="width:auto;padding:6px 10px;" onclick="deactivateInventoryItem(${JSON.stringify(item.id)})">Remove</button>
-            </div>
-          ` : `
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-              <div>
-                <strong style="${isLow?"color:#dc2626":""}">${isLow ? "⚠️ " : ""}${item.name}</strong>
-                <div class="muted" style="font-size:13px;">${item.location||"van"}${item.category ? " · "+item.category : ""}</div>
-              </div>
-              <div style="display:flex;align-items:center;gap:8px;">
-                ${hasQty ? `<span style="font-weight:700;font-size:18px;${isLow?"color:#dc2626":""}">${qty}</span><span class="muted">${unit}</span><button class="secondary" style="width:auto;padding:6px 14px;font-size:20px;" onclick="openInvAdj(${JSON.stringify({id:item.id,name:item.name,quantity:item.quantity,unit:item.unit})})">±</button>` : `<span class="muted">not tracked</span>`}
-              </div>
-            </div>
-          `}
-        </div>`;
+        const stock = item.stock || { [item.location||"van"]: item.quantity };
+        const isToolType = (item.item_type === "tool") || ["tool","equipment"].includes(item.category);
+        const typeBadge = isToolType ? '<span style="background:#dbeafe;color:#1d4ed8;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:6px;">tool</span>' : '<span style="background:#dcfce7;color:#166534;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:6px;">consumable</span>';
+
+        if (invEditMode) {
+          // Edit mode: show all fields
+          return '<div class="inventory-row" style="margin-bottom:12px;padding:10px;">' +
+            '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+              '<input value="' + item.name.replace(/"/g, '&quot;') + '" id="inv-name-' + item.id + '" style="flex:2;min-width:120px;" />' +
+              '<select id="inv-cat-' + item.id + '" style="flex:1;min-width:100px;">' +
+                '<option value="supply"' + (item.category==="supply"?" selected":"") + '>Supply</option>' +
+                '<option value="tool"' + (item.category==="tool"?" selected":"") + '>Tool</option>' +
+                '<option value="equipment"' + (item.category==="equipment"?" selected":"") + '>Equipment</option>' +
+              '</select>' +
+              '<select id="inv-type-' + item.id + '" style="flex:1;min-width:100px;">' +
+                '<option value="consumable"' + (item.item_type!=="tool"?" selected":"") + '>Consumable</option>' +
+                '<option value="tool"' + (item.item_type==="tool"?" selected":"") + '>Tool (reusable)</option>' +
+              '</select>' +
+            '</div>' +
+            '<div style="margin-top:8px;font-size:12px;font-weight:600;color:#64748b;">Stock by location</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">' +
+              ['van','truck','warehouse'].map(loc => {
+                const v = stock[loc] !== undefined ? stock[loc] : '';
+                return '<div style="flex:1;min-width:80px;"><label style="font-size:11px;color:#94a3b8;">' + locationLabels[loc] + '</label><input type="number" step="0.25" value="' + v + '" id="inv-stock-' + loc + '-' + item.id + '" placeholder="—" style="width:100%;" /></div>';
+              }).join('') +
+            '</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">' +
+              '<input value="' + (item.unit||"") + '" id="inv-unit-' + item.id + '" placeholder="Unit" style="flex:1;min-width:70px;" />' +
+              '<input type="number" step="1" value="' + (item.reorderPoint != null ? item.reorderPoint : "") + '" id="inv-reorder-' + item.id + '" placeholder="Reorder at" style="flex:1;min-width:90px;" />' +
+              `<button class="red" style="width:auto;padding:6px 10px;" onclick="deactivateInventoryItem('${item.id}')">Remove</button>` +
+            '</div>' +
+          '</div>';
+        }
+
+        // View mode: show stock per location
+        const stockParts = Object.entries(stock)
+          .filter(([,v]) => v !== null && v > 0)
+          .map(([loc, v]) => locationLabels[loc] + ': <strong>' + v + '</strong>');
+        const stockDisplay = stockParts.length ? stockParts.join(' &nbsp; ') : '<span class="muted">none tracked</span>';
+
+        return '<div class="inventory-row ' + (isLow ? "low-stock" : "") + '" style="margin-bottom:8px;padding:10px;">' +
+          '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
+            '<div style="flex:1;">' +
+              '<div><strong style="' + (isLow?"color:#dc2626":"") + '">' + (isLow?"⚠️ ":"") + item.name + '</strong>' + typeBadge + '</div>' +
+              '<div style="font-size:13px;margin-top:4px;">' + stockDisplay + ' <span class="muted">' + (item.unit||"") + '</span></div>' +
+            '</div>' +
+            `<button class="secondary" style="width:auto;padding:6px 14px;font-size:18px;flex-shrink:0;" data-invid="${item.id}" onclick="openInvAdjById(this)">±</button>` +
+          '</div>' +
+        '</div>';
       }).join("");
     }
 
@@ -2050,20 +2290,27 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       const saves = inventory.map(async item => {
         const nameEl = document.getElementById("inv-name-"+item.id);
         if (!nameEl) return;
-        const qtyEl = document.getElementById("inv-qty-"+item.id);
+        const catEl = document.getElementById("inv-cat-"+item.id);
+        const typeEl = document.getElementById("inv-type-"+item.id);
         const unitEl = document.getElementById("inv-unit-"+item.id);
         const reorderEl = document.getElementById("inv-reorder-"+item.id);
-        const locEl = document.getElementById("inv-loc-"+item.id);
+        const stock = {};
+        ["van","truck","warehouse"].forEach(loc => {
+          const el = document.getElementById("inv-stock-"+loc+"-"+item.id);
+          if (el) stock[loc] = el.value === "" ? null : Number(el.value);
+        });
+        const totalQty = Object.values(stock).filter(v => v !== null).reduce((a,b) => a+b, 0);
         await fetch("/inventory/"+item.id, {
           method: "PUT",
           headers: {"Content-Type":"application/json"},
           body: JSON.stringify({
             name: nameEl.value.trim() || item.name,
-            quantity: qtyEl?.value === "" ? null : Number(qtyEl?.value),
+            category: catEl?.value || item.category || "supply",
+            item_type: typeEl?.value || item.item_type || "consumable",
             unit: unitEl?.value.trim() || item.unit,
             reorderPoint: reorderEl?.value === "" ? null : Number(reorderEl?.value),
-            location: locEl?.value || item.location || "van",
-            category: item.category || "supply",
+            stock,
+            quantity: totalQty,
             active: true
           })
         });
@@ -2073,27 +2320,41 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       renderInventoryModalList();
     }
 
+    function updateNewInvType() {
+      const cat = document.getElementById("newInvCategory")?.value;
+      const typeEl = document.getElementById("newInvType");
+      if (typeEl) typeEl.value = ["tool","equipment"].includes(cat) ? "tool" : "consumable";
+    }
+
     function showAddInventoryForm() { document.getElementById("invAddForm")?.classList.remove("hidden"); }
     function hideAddInventoryForm() { document.getElementById("invAddForm")?.classList.add("hidden"); }
 
     async function addInventoryItem() {
       const name = document.getElementById("newInvName")?.value.trim();
       if (!name) return alert("Enter item name");
-      const qtyVal = document.getElementById("newInvQty")?.value;
+      const stock = {};
+      ["van","truck","warehouse"].forEach(loc => {
+        const el = document.getElementById("newInvQty"+loc.charAt(0).toUpperCase()+loc.slice(1));
+        if (el && el.value !== "") stock[loc] = Number(el.value);
+      });
+      const cat = document.getElementById("newInvCategory")?.value || "supply";
       await fetch("/inventory/add", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           name,
-          category: document.getElementById("newInvCategory")?.value || "supply",
-          location: document.getElementById("newInvLocation")?.value || "van",
-          quantity: qtyVal === "" ? null : Number(qtyVal),
+          category: cat,
+          item_type: document.getElementById("newInvType")?.value || (["tool","equipment"].includes(cat) ? "tool" : "consumable"),
+          stock,
           unit: document.getElementById("newInvUnit")?.value || "pieces",
           reorderPoint: (document.getElementById("newInvReorder")?.value || "") === "" ? null : Number(document.getElementById("newInvReorder")?.value)
         })
       });
       document.getElementById("newInvName").value = "";
-      document.getElementById("newInvQty").value = "";
+      ["van","truck","warehouse"].forEach(loc => {
+        const el = document.getElementById("newInvQty"+loc.charAt(0).toUpperCase()+loc.slice(1));
+        if (el) el.value = "";
+      });
       document.getElementById("newInvReorder").value = "";
       hideAddInventoryForm();
       await loadInventory();
@@ -2120,15 +2381,40 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
     }
 
     // Quick Adjust Modal
+    function openInvAdjById(btn) {
+      const id = btn.dataset.invid;
+      const item = inventory.find(i => String(i.id) === String(id));
+      if (item) openInvAdj({id: item.id, name: item.name, stock: item.stock || {}, unit: item.unit});
+    }
+
     function openInvAdj(item) {
       invAdjTarget = item;
       const titleEl = document.getElementById("invAdjTitle");
       const currEl = document.getElementById("invAdjCurrent");
       const qtyEl = document.getElementById("invAdjQty");
+      const locSel = document.getElementById("invAdjLocation");
       if (titleEl) titleEl.textContent = item.name;
-      if (currEl) currEl.textContent = "Current stock: "+item.quantity+" "+(item.unit||"");
       if (qtyEl) qtyEl.value = "1";
+      // Set location to wherever most stock is
+      const stock = item.stock || {};
+      const mainLoc = Object.entries(stock).filter(([,v]) => v > 0).sort((a,b) => b[1]-a[1])[0]?.[0] || "van";
+      if (locSel) locSel.value = mainLoc;
+      updateAdjLocationDisplay();
       document.getElementById("invAdjustModal").classList.remove("hidden");
+    }
+
+    function updateAdjLocationDisplay() {
+      if (!invAdjTarget) return;
+      const loc = document.getElementById("invAdjLocation")?.value || "van";
+      const stock = invAdjTarget.stock || {};
+      const qty = stock[loc] !== undefined ? stock[loc] : 0;
+      const el = document.getElementById("invAdjLocationStock");
+      if (el) el.textContent = "Current in this location: " + (qty !== null ? qty : "—") + " " + (invAdjTarget.unit || "");
+      const currEl = document.getElementById("invAdjCurrent");
+      if (currEl) {
+        const all = Object.entries(stock).filter(([,v]) => v !== null && v > 0).map(([l,v]) => l + ": " + v).join(", ");
+        currEl.textContent = all ? "Total stock: " + all : "No stock tracked";
+      }
     }
 
     function closeInvAdjModal() {
@@ -2143,11 +2429,12 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
     async function commitInvAdj(direction) {
       if (!invAdjTarget) return;
+      const location = document.getElementById("invAdjLocation")?.value || "van";
       const delta = Number(document.getElementById("invAdjQty").value || 1) * direction;
       const res = await fetch("/inventory/adjust", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ id: invAdjTarget.id, delta })
+        body: JSON.stringify({ id: invAdjTarget.id, delta, location })
       });
       if (res.ok) {
         closeInvAdjModal();
@@ -4335,56 +4622,64 @@ async function saveScheduleCrew() {
       }
     }
 
-    async function loadEmployeeClockRecords(){
+    async function loadEmployeeClockRecords() {
       try {
-        const date = $("dailyDate")?.value || dailySetup.date || new Date().toISOString().slice(0,10);
-        const res = await fetch(`/time-clock?date=${encodeURIComponent(date)}`);
-        employeeClockRecords = await res.json();
-      } catch {
-        employeeClockRecords = [];
+        const date = currentDate();
+        const res = await fetch("/today-crew?date=" + encodeURIComponent(date));
+        const data = await res.json();
+        todayCrew = data.crew || [];
+        // Also populate the dropdown
+        const sel = document.getElementById("employeeClockEmployee");
+        if (sel) {
+          const curVal = sel.value;
+          sel.innerHTML = todayCrew.length
+            ? todayCrew.map(e => '<option value="' + e.id + '"' + (String(e.id) === curVal ? " selected" : "") + '>' + e.name + (e.clockedIn ? " ✓" : "") + '</option>').join("")
+            : '<option value="">No crew assigned today</option>';
+        }
+        renderEmployeeClockStatus();
+      } catch(e) {
+        console.error("Load crew error", e);
       }
     }
 
-    function activeEmployeeRecord(employeeId){
-      return employeeClockRecords.find(r => String(r.employeeId) === String(employeeId) && !r.clockOut);
-    }
-
-    function renderEmployeeClockStatus(){
-      const el = $("employeeClockStatus");
-      if (!el) return;
-      const active = employeeClockRecords.filter(r => !r.clockOut);
-      el.innerHTML = active.length
-        ? `Clocked in: ${active.map(r => `${r.name} since ${new Date(r.clockIn).toLocaleTimeString([], {hour:"numeric", minute:"2-digit"})}`).join(" • ")}`
-        : "No employees currently clocked in.";
-      renderEmployeeDropdown();
+    function renderEmployeeClockStatus() {
+      const el = document.getElementById("employeeClockStatus");
+      if (!el || !todayCrew) return;
+      const clocked = todayCrew.filter(e => e.clockedIn);
+      const notClocked = todayCrew.filter(e => !e.clockedIn);
+      el.innerHTML =
+        (clocked.length ? '<div style="color:#16a34a;font-size:13px;margin-top:6px;">✅ Clocked in: ' + clocked.map(e => e.name).join(", ") + '</div>' : '') +
+        (notClocked.length ? '<div style="color:#dc2626;font-size:13px;margin-top:4px;">⏳ Not clocked in: ' + notClocked.map(e => e.name).join(", ") + '</div>' : '') +
+        (!todayCrew.length ? '<div class="muted" style="font-size:13px;margin-top:6px;">No crew assigned. Set crew in Manager Setup.</div>' : '');
     }
 
     async function clockInEmployee(){
-      const employeeId = $("employeeClockEmployee").value;
+      const employeeId = document.getElementById("employeeClockEmployee")?.value;
       if (!employeeId) return alert("Choose an employee");
-      const employee = employees.find(e => String(e.id) === String(employeeId));
-      if (activeEmployeeRecord(employeeId)) return alert(`${employee?.name || "Employee"} is already clocked in`);
+      const crew = todayCrew || [];
+      const employee = crew.find(e => String(e.id) === String(employeeId));
+      if (employee?.clockedIn) return alert((employee?.name || "Employee") + " is already clocked in");
 
       const res = await fetch("/time-clock/clock-in", {
         method:"POST",
         headers:{ "Content-Type":"application/json" },
         body: JSON.stringify({
           employeeId,
-          date: $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10),
+          date: document.getElementById("dailyDate")?.value || currentDate(),
           geo: await getBrowserGeo()
         })
       });
       const data = await res.json();
       if (data.error) return alert(data.error);
       await loadEmployeeClockRecords();
-      renderEmployeeClockStatus();
-      alert(`${data.name} clocked in`);
+      alert(data.name + " clocked in ✅");
     }
 
     async function clockOutEmployee(){
-      const employeeId = $("employeeClockEmployee").value;
+      const employeeId = document.getElementById("employeeClockEmployee")?.value;
       if (!employeeId) return alert("Choose an employee");
-      const employee = employees.find(e => String(e.id) === String(employeeId));
+      const crew = todayCrew || [];
+      const employee = crew.find(e => String(e.id) === String(employeeId));
 
       const res = await fetch("/time-clock/clock-out", {
         method:"POST",
@@ -4394,9 +4689,9 @@ async function saveScheduleCrew() {
       const data = await res.json();
       if (data.error) return alert(data.error);
       await loadEmployeeClockRecords();
-      renderEmployeeClockStatus();
-      alert(`${employee?.name || data.name || "Employee"} clocked out • ${data.minutes || 0} minutes`);
+      alert((employee?.name || data.name || "Employee") + " clocked out — " + (data.minutes || 0) + " mins");
     }
+
 
     async function openEmployeeTimeClockModal(){
       $("timeClockFilterDate").value = $("dailyDate").value || dailySetup.date || new Date().toISOString().slice(0,10);

@@ -355,6 +355,13 @@ await query(`
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS inventory_movements (id SERIAL PRIMARY KEY, item_id TEXT, item_name TEXT, delta NUMERIC, new_quantity NUMERIC, reason TEXT, moved_by TEXT, moved_at TEXT DEFAULT NOW())`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
+
+  // Multi-location inventory stock
+  await query(`CREATE TABLE IF NOT EXISTS inventory_stock (id SERIAL PRIMARY KEY, item_id TEXT NOT NULL, location TEXT NOT NULL DEFAULT 'van', quantity NUMERIC, UNIQUE(item_id, location))`);
+  await query(`ALTER TABLE inventory ADD COLUMN IF NOT EXISTS item_type TEXT DEFAULT 'consumable'`);
+  // Enhanced checklist state
+  await query(`ALTER TABLE daily_checklist_state ADD COLUMN IF NOT EXISTS checklist_type TEXT DEFAULT 'morning'`);
+  await query(`ALTER TABLE daily_checklist_state ADD COLUMN IF NOT EXISTS quantity_used NUMERIC`);
 }
 
 async function loadDbFromPostgres() {
@@ -375,19 +382,30 @@ async function loadDbFromPostgres() {
     createdAt: c.created_at || null
   }));
 
-const inventoryRes = await query(`SELECT * FROM inventory ORDER BY name`);
-db.inventory = inventoryRes.rows.map(i => ({
-  id: i.id,
-  key: i.item_key,
-  name: i.name,
-  quantity: i.quantity === null ? null : Number(i.quantity),
-  unit: i.unit,
-  category: i.category || "supply",
-  location: i.location || "van",
-  reorderPoint: i.reorder_point === null ? null : Number(i.reorder_point),
-  active: i.active !== false,
-  display: i.display || null
-}));
+const inventoryRes = await query(`SELECT * FROM inventory WHERE active = true ORDER BY name`);
+const stockRes = await query(`SELECT * FROM inventory_stock`);
+db.inventory = inventoryRes.rows.map(i => {
+  const itemStocks = stockRes.rows.filter(s => s.item_id === i.id);
+  // Build per-location stock map
+  const stock = { van: null, truck: null, warehouse: null };
+  itemStocks.forEach(s => { stock[s.location] = s.quantity === null ? null : Number(s.quantity); });
+  // Total quantity = sum of all locations (for backward compat)
+  const totalQty = Object.values(stock).filter(v => v !== null).reduce((a, b) => a + b, 0) || (i.quantity === null ? null : Number(i.quantity));
+  return {
+    id: i.id,
+    key: i.item_key,
+    name: i.name,
+    quantity: totalQty,
+    unit: i.unit,
+    category: i.category || "supply",
+    item_type: i.item_type || (["tool","equipment"].includes(i.category) ? "tool" : "consumable"),
+    location: i.location || "van",
+    stock, // { van: N, truck: N, warehouse: N }
+    reorderPoint: i.reorder_point === null ? null : Number(i.reorder_point),
+    active: i.active !== false,
+    display: i.display || null
+  };
+});
   const jobsRes = await query(`SELECT * FROM jobs ORDER BY service_date, sort_order, id`);
   const servicesRes = await query(`SELECT * FROM job_services ORDER BY service_index, id`);
   const photosRes = await query(`SELECT * FROM job_photos ORDER BY created_at, id`);
@@ -511,10 +529,32 @@ async function upsertClockEntry(entry) {
 
 async function upsertInventoryItem(item) {
   await query(
-    `INSERT INTO inventory (id, item_key, name, category, location, quantity, unit, reorder_point, active, display)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     ON CONFLICT (id) DO UPDATE SET name=$3, category=$4, location=$5, quantity=$6, unit=$7, reorder_point=$8, active=$9`,
-    [String(item.id || item.key), item.key || String(item.id), item.name || "", item.category || "supply", item.location || "van", item.quantity, item.unit || "", item.reorderPoint, item.active !== false, item.display || null]
+    `INSERT INTO inventory (id, item_key, name, category, location, item_type, quantity, unit, reorder_point, active, display)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     ON CONFLICT (id) DO UPDATE SET name=$3, category=$4, location=$5, item_type=$6, quantity=$7, unit=$8, reorder_point=$9, active=$10`,
+    [String(item.id || item.key), item.key || String(item.id), item.name || "", item.category || "supply",
+     item.location || "van", item.item_type || "consumable",
+     item.quantity, item.unit || "", item.reorderPoint, item.active !== false, item.display || null]
+  );
+  // Upsert stock per location if provided
+  if (item.stock) {
+    for (const [loc, qty] of Object.entries(item.stock)) {
+      if (qty !== undefined) {
+        await query(
+          `INSERT INTO inventory_stock (item_id, location, quantity) VALUES ($1,$2,$3)
+           ON CONFLICT (item_id, location) DO UPDATE SET quantity=$3`,
+          [String(item.id), loc, qty]
+        );
+      }
+    }
+  }
+}
+
+async function upsertInventoryStock(itemId, location, quantity) {
+  await query(
+    `INSERT INTO inventory_stock (item_id, location, quantity) VALUES ($1,$2,$3)
+     ON CONFLICT (item_id, location) DO UPDATE SET quantity=$3`,
+    [String(itemId), location, quantity]
   );
 }
 
@@ -933,7 +973,6 @@ function sumRangesMinutes(ranges = []) {
 
 function dailyChecklistForDate(date, db) {
   const items = new Set();
-
   db.jobs
     .filter(job => job.serviceDate === date && !job.deletedAt && !job.archivedAt)
     .forEach(job => {
@@ -942,13 +981,50 @@ function dailyChecklistForDate(date, db) {
         (CHECKLISTS[key] || []).forEach(item => items.add(item));
       });
     });
-
   return Array.from(items).sort((a, b) => a.localeCompare(b));
+}
+
+// Build enhanced checklist with item metadata (type, location)
+function buildEnhancedChecklist(date, db) {
+  const itemNames = new Set();
+  db.jobs
+    .filter(job => job.serviceDate === date && !job.deletedAt && !job.archivedAt)
+    .forEach(job => {
+      (job.services || []).forEach(service => {
+        const key = `${service.category}|${service.subtype}`;
+        (CHECKLISTS[key] || []).forEach(item => itemNames.add(item));
+      });
+    });
+
+  const morningState = db.dailySetup.dailyChecklistState?.[date + "|morning"] || {};
+  const eodState = db.dailySetup.dailyChecklistState?.[date + "|eod"] || {};
+
+  const items = Array.from(itemNames).sort().map(itemName => {
+    // Find matching inventory item (fuzzy match by name)
+    const invItem = db.inventory.find(i => i.active !== false &&
+      i.name.toLowerCase() === itemName.toLowerCase());
+    const itemType = invItem?.item_type || (invItem && ["tool","equipment"].includes(invItem.category) ? "tool" : "consumable");
+    const locations = invItem?.stock ? Object.entries(invItem.stock).filter(([,v]) => v !== null && v > 0).map(([loc]) => loc) : [invItem?.location || "van"];
+    const needsLoading = itemType === "consumable" && locations.some(l => l === "warehouse") && !locations.some(l => l === "van" || l === "truck");
+
+    return {
+      item: itemName,
+      item_type: itemType,
+      locations,
+      needsLoading,
+      inventoryId: invItem?.id || null,
+      unit: invItem?.unit || null,
+      morning_checked: !!morningState[itemName],
+      eod_checked: !!eodState[itemName],
+      eod_qty_used: eodState[itemName + "_qty"] || null
+    };
+  });
+
+  return { date, items };
 }
 
 function buildChecklistWithState(date, db) {
   const state = db.dailySetup.dailyChecklistState?.[date] || {};
-
   return dailyChecklistForDate(date, db).map(item => ({
     item,
     checked: !!state[item]
@@ -961,18 +1037,17 @@ function contractorDisplayName(c) {
 
 function getInventoryViewItem(item) {
   const isBoxed = item.display?.mode === "boxesOf50";
-
   const displayQuantity = isBoxed
     ? Number((Number(item.quantity || 0) / Number(item.display.perBox || 50)).toFixed(2))
     : item.quantity;
-
   const displayReorderPoint =
     isBoxed && item.reorderPoint != null
       ? Number((Number(item.reorderPoint) / Number(item.display.perBox || 50)).toFixed(2))
       : item.reorderPoint;
-
   return {
     ...item,
+    item_type: item.item_type || (["tool","equipment"].includes(item.category) ? "tool" : "consumable"),
+    stock: item.stock || { van: item.location === "van" ? item.quantity : null, truck: item.location === "truck" ? item.quantity : null, warehouse: item.location === "warehouse" ? item.quantity : null },
     displayQuantity,
     displayUnit: isBoxed ? item.display.label : item.unit,
     displayReorderPoint
@@ -1450,6 +1525,61 @@ app.get("/daily-checklist", (req, res) => {
   const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
   res.json({ date, items: buildChecklistWithState(date, db) });
+});
+
+// Enhanced checklist with type, location, loading flags
+app.get("/checklist-enhanced", (req, res) => {
+  const db = readDbRO();
+  const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
+  res.json(buildEnhancedChecklist(date, db));
+});
+
+// Toggle morning or EOD checklist item
+app.post("/checklist-toggle-v2", async (req, res) => {
+  try {
+    const db = readDb();
+    const date = cleanString(req.body.date) || todayString();
+    const item = cleanString(req.body.item);
+    const checked = !!req.body.checked;
+    const clType = cleanString(req.body.checklist_type) || "morning"; // morning | eod
+    const key = date + "|" + clType;
+    db.dailySetup.dailyChecklistState ||= {};
+    db.dailySetup.dailyChecklistState[key] ||= {};
+    db.dailySetup.dailyChecklistState[key][item] = checked;
+    // Persist to DB
+    await query(
+      `INSERT INTO daily_checklist_state (check_date, item, checked, checklist_type) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (check_date, item) DO UPDATE SET checked=$3, checklist_type=$4`,
+      [key, item, checked, clType]
+    );
+    // If EOD item with quantity used, deduct from inventory
+    if (clType === "eod" && req.body.qty_used != null) {
+      const qtyUsed = Number(req.body.qty_used);
+      if (qtyUsed > 0) {
+        const invItem = db.inventory.find(i => i.name.toLowerCase() === item.toLowerCase());
+        if (invItem) {
+          const loc = req.body.location || invItem.location || "van";
+          invItem.stock = invItem.stock || {};
+          const cur = invItem.stock[loc] ?? invItem.quantity ?? 0;
+          invItem.stock[loc] = Math.max(0, Number((cur - qtyUsed).toFixed(2)));
+          invItem.quantity = Object.values(invItem.stock).filter(v => v !== null).reduce((a,b)=>a+b,0);
+          await upsertInventoryItem(invItem);
+          await upsertInventoryStock(invItem.id, loc, invItem.stock[loc]);
+          // Store qty in state
+          db.dailySetup.dailyChecklistState[key][item + "_qty"] = qtyUsed;
+          await query(
+            `INSERT INTO inventory_movements (item_id, item_name, delta, new_quantity, reason, moved_by) VALUES ($1,$2,$3,$4,$5,$6)`,
+            [String(invItem.id), invItem.name, -qtyUsed, invItem.stock[loc], "eod_checklist", "crew"]
+          ).catch(() => {});
+        }
+      }
+    }
+    memoryDb = db;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Checklist v2 toggle error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // New local-first checklist: returns item list + server state for seeding fresh devices
@@ -2068,11 +2198,21 @@ app.put("/inventory/:id", async (req, res) => {
     if (!item) return res.status(404).json({ error: "Inventory item not found" });
     if (req.body.name !== undefined) item.name = cleanString(req.body.name) || item.name;
     if (req.body.category !== undefined) item.category = cleanString(req.body.category) || item.category || "supply";
+    if (req.body.item_type !== undefined) item.item_type = cleanString(req.body.item_type) || item.item_type || "consumable";
     if (req.body.location !== undefined) item.location = cleanString(req.body.location) || item.location || "van";
     if (req.body.quantity !== undefined) item.quantity = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
     if (req.body.unit !== undefined) item.unit = cleanString(req.body.unit) || item.unit;
     if (req.body.reorderPoint !== undefined) item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
     item.active = req.body.active === undefined ? item.active : !!req.body.active;
+    // Update multi-location stock if provided
+    if (req.body.stock && typeof req.body.stock === "object") {
+      item.stock = req.body.stock;
+      for (const [loc, qty] of Object.entries(req.body.stock)) {
+        if (qty !== undefined) await upsertInventoryStock(item.id, loc, qty);
+      }
+      const total = Object.values(req.body.stock).filter(v => v !== null).reduce((a,b) => a+b, 0);
+      if (total > 0) item.quantity = total;
+    }
     await upsertInventoryItem(item);
     memoryDb = db;
     broadcastUpdate("inventory_updated", {});
@@ -2088,17 +2228,20 @@ app.post("/inventory/adjust", async (req, res) => {
     const db = readDb();
     const item = db.inventory.find(i => String(i.id) === String(req.body.id));
     if (!item) return res.status(404).json({ error: "Item not found" });
-    if (item.quantity == null) return res.status(400).json({ error: "This item does not track quantity" });
+    const location = cleanString(req.body.location) || item.location || "van";
     const delta = Number(req.body.delta || 0);
-    const oldQty = Number(item.quantity || 0);
-    item.quantity = Number((oldQty + delta).toFixed(2));
-    if (item.quantity < 0) item.quantity = 0;
+    item.stock = item.stock || {};
+    const locQty = item.stock[location] ?? item.quantity ?? 0;
+    if (locQty === null && delta < 0) return res.status(400).json({ error: "This item does not track quantity" });
+    item.stock[location] = Math.max(0, Number(((locQty || 0) + delta).toFixed(2)));
+    // Update total quantity
+    item.quantity = Object.values(item.stock).filter(v => v !== null).reduce((a, b) => a + b, 0);
     await upsertInventoryItem(item);
-    // Log the movement
+    await upsertInventoryStock(item.id, location, item.stock[location]);
     await query(
       `INSERT INTO inventory_movements (item_id, item_name, delta, new_quantity, reason, moved_by) VALUES ($1,$2,$3,$4,$5,$6)`,
-      [String(item.id), item.name, delta, item.quantity, req.body.reason || "manual", req.body.movedBy || "unknown"]
-    ).catch(() => {}); // non-critical
+      [String(item.id), item.name, delta, item.stock[location], req.body.reason || "manual", req.body.movedBy || "unknown"]
+    ).catch(() => {});
     memoryDb = db;
     broadcastUpdate("inventory_updated", {});
     res.json(getInventoryViewItem(item));
@@ -2108,16 +2251,49 @@ app.post("/inventory/adjust", async (req, res) => {
   }
 });
 
+// Move stock between locations
+app.post("/inventory/move", async (req, res) => {
+  try {
+    const db = readDb();
+    const item = db.inventory.find(i => String(i.id) === String(req.body.id));
+    if (!item) return res.status(404).json({ error: "Item not found" });
+    const from = cleanString(req.body.from);
+    const to = cleanString(req.body.to);
+    const qty = Number(req.body.quantity || 0);
+    if (!from || !to || qty <= 0) return res.status(400).json({ error: "Invalid move params" });
+    item.stock = item.stock || {};
+    const fromQty = item.stock[from] ?? 0;
+    if (fromQty < qty) return res.status(400).json({ error: `Only ${fromQty} available in ${from}` });
+    item.stock[from] = Number((fromQty - qty).toFixed(2));
+    item.stock[to] = Number(((item.stock[to] || 0) + qty).toFixed(2));
+    await upsertInventoryStock(item.id, from, item.stock[from]);
+    await upsertInventoryStock(item.id, to, item.stock[to]);
+    memoryDb = db;
+    broadcastUpdate("inventory_updated", {});
+    res.json(getInventoryViewItem(item));
+  } catch (err) {
+    res.status(500).json({ error: "Move failed: " + err.message });
+  }
+});
+
 app.post("/inventory/add", async (req, res) => {
   try {
     const db = readDb();
+    // Support multi-location stock on add
+    const stock = req.body.stock || {};
+    const primaryLocation = cleanString(req.body.location) || "van";
+    const primaryQty = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
+    if (primaryQty !== null && !stock[primaryLocation]) stock[primaryLocation] = primaryQty;
+    const totalQty = Object.values(stock).filter(v => v !== null).reduce((a, b) => a + b, primaryQty || 0);
     const item = {
       id: uuidv4(),
       key: cleanString(req.body.key) || uuidv4(),
       name: cleanString(req.body.name),
       category: cleanString(req.body.category) || "supply",
-      location: cleanString(req.body.location) || "van",
-      quantity: req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity),
+      item_type: cleanString(req.body.item_type) || (["tool","equipment"].includes(req.body.category) ? "tool" : "consumable"),
+      location: primaryLocation,
+      stock,
+      quantity: totalQty,
       unit: cleanString(req.body.unit) || "pieces",
       reorderPoint: req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint),
       active: true
