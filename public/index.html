@@ -1668,10 +1668,13 @@
 $("dailyDate").value = today;
 $("dailyDate").disabled = true;
 
-$("managerDateMirror").value = today;
-$("scheduleDate").value = today;
+if (currentMode === "van") {
+  $("dailyDate").value = today;
+  $("dailyDate").disabled = true;
+}
 
-    
+if (!$("managerDateMirror").value) $("managerDateMirror").value = today;
+if (!$("scheduleDate").value) $("scheduleDate").value = today;    
 if (document.activeElement !== $("managerCrewSize")) {
   $("managerCrewSize").value = dailySetup.crewSize || 1;
 }
