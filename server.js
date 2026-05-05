@@ -12,6 +12,8 @@ const qs = require("qs");
 const { v4: uuidv4 } = require("uuid");
 const { Server } = require("socket.io");
 const { pool, query } = require("./database");
+const morgan = require("morgan");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const server = http.createServer(app);
@@ -24,17 +26,29 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 const EXPORTS_DIR = path.join(__dirname, "exports");
 
 let memoryDb = null;
-let persistInFlight = Promise.resolve();
 
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 if (!fs.existsSync(EXPORTS_DIR)) fs.mkdirSync(EXPORTS_DIR, { recursive: true });
 
-app.use(express.json({ limit: "25mb" }));
+app.use(express.json({ limit: "256kb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR));
 app.use("/uploads", express.static(UPLOADS_DIR));
 app.use("/exports", express.static(EXPORTS_DIR));
+
+// Request logging
+app.use(morgan("combined"));
+
+// Rate limiting on write routes
+const writeLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests, slow down" }
+});
+app.use(["/jobs", "/contractors", "/inventory", "/employees", "/time-clock", "/estimates", "/qb"], writeLimiter);
 
 const storage = multer.diskStorage({
   destination: function (_req, _file, cb) {
@@ -275,6 +289,12 @@ function readDb() {
   return cloneDb(memoryDb);
 }
 
+// For read-only operations — no clone, direct reference, much faster
+function readDbRO() {
+  ensureDb();
+  return memoryDb;
+}
+
 function numericIfPossible(v) {
   const n = Number(v);
   return !Number.isNaN(n) && /^\d+$/.test(String(v)) ? n : v;
@@ -328,6 +348,7 @@ await query(`
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS assigned_employee_ids JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE job_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
   await query(`ALTER TABLE estimate_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
+  await query(`CREATE TABLE IF NOT EXISTS route_events (id TEXT PRIMARY KEY, action TEXT, job_id TEXT, service_index INTEGER, employee_id TEXT, employee_name TEXT, service_address TEXT, formatted_address TEXT, latitude NUMERIC, longitude NUMERIC, accuracy NUMERIC, event_date TEXT, created_at TEXT)`);
   await query(`ALTER TABLE time_clock_entries ADD COLUMN IF NOT EXISTS clock_in_geo JSONB`);
   await query(`ALTER TABLE time_clock_entries ADD COLUMN IF NOT EXISTS clock_out_geo JSONB`);
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
@@ -506,23 +527,36 @@ async function upsertChecklistState(date, itemName, checked) {
 
 async function upsertJob(client_or_query_fn, job) {
   const q = typeof client_or_query_fn === 'function' ? client_or_query_fn : (sql, params) => client_or_query_fn.query(sql, params);
+  // Ensure unique constraint exists for service upsert (idempotent)
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS job_services_job_service_idx ON job_services(job_id, service_index)`).catch(() => {});
+
   await q(
     `INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
      ON CONFLICT (id) DO UPDATE SET contractor_id=$2, service_address=$3, service_date=$4, notes=$5, sort_order=$7, deleted_at=$8, archived_at=$9, finished_at=$10, quickbooks_status=$11, quickbooks_invoice_id=$12, from_estimate_id=$13, open_status=$14`,
     [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day"]
   );
-  // Delete and re-insert services for this job
-  await q(`DELETE FROM job_services WHERE job_id=$1`, [String(job.id)]);
+
+  // Upsert each service row — no delete needed
   let idx = 0;
   for (const s of job.services || []) {
     await q(
       `INSERT INTO job_services (job_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+       ON CONFLICT (job_id, service_index) DO UPDATE SET category=$3, subtype=$4, crew_size=$5, hours_manual=$6, linear_feet=$7, junk_load=$8, junk_price=$9, service_date=$10, on_my_way_time=$11, arrived_time=$12, start_time=$13, end_time=$14, materials_used=$15, inventory_deducted_at=$16, action_geo=$17`,
       [String(job.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
     );
   }
+
+  // Remove any stale service rows if services were deleted from a job
+  const serviceCount = (job.services || []).length;
+  if (serviceCount === 0) {
+    await q(`DELETE FROM job_services WHERE job_id=$1`, [String(job.id)]);
+  } else {
+    await q(`DELETE FROM job_services WHERE job_id=$1 AND service_index >= $2`, [String(job.id), serviceCount]);
+  }
 }
+
 
 async function upsertContractor(c) {
   await query(
@@ -555,103 +589,28 @@ async function upsertEstimate(estimate) {
   }
 }
 
-async function persistDbToPostgres(db) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const tables = ["contractor_addresses","job_photos","job_services","estimate_services","jobs","estimates","contractors","inventory","employees","time_clock_entries","daily_checklist_state","daily_setup","settings","quickbooks_tokens","route_events"];
-    for (const table of tables) await client.query(`DELETE FROM ${table}`);
+// persistDbToPostgres removed — direct upserts only
 
-    for (const c of db.contractors || []) {
-      await client.query(`INSERT INTO contractors (id, company_name, contact_name, email, phone, billing_address, payment_terms, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [String(c.id), c.companyName || "", c.contactName || "", c.email || "", c.phone || "", c.billingAddress || "", c.paymentTerms || "", c.createdAt || new Date().toISOString()]);
-      for (const addr of c.serviceAddresses || []) await client.query(`INSERT INTO contractor_addresses (contractor_id, address) VALUES ($1,$2)`, [String(c.id), addr]);
-    }
 
-   
-for (const item of db.inventory || []) {
-  await client.query(
-    `INSERT INTO inventory (id, item_key, name, category, location, quantity, unit, reorder_point, active, display)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [
-      String(item.id || item.key),
-      item.key || String(item.id),
-      item.name || "",
-      item.category || "supply",
-      item.location || "van",
-      item.quantity,
-      item.unit || "",
-      item.reorderPoint,
-      item.active !== false,
-      item.display || null
-    ]
-  );
-}
+// writeDb removed — all writes go directly to Postgres per-route
 
-    for (const job of db.jobs || []) {
-      await client.query(`INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day"]);
-      let index = 0;
-      for (const s of job.services || []) await insertServiceRow(client, "job_services", "job_id", String(job.id), s, index++);
-      for (const p of job.photos || []) await client.query(`INSERT INTO job_photos (id, job_id, url, tag, caption, created_at) VALUES ($1,$2,$3,$4,$5,$6)`, [String(p.id || uuidv4()), String(job.id), p.url || "", p.tag || "before", p.caption || "", p.createdAt || new Date().toISOString()]);
-    }
-
-    for (const est of db.estimates || []) {
-      await client.query(`INSERT INTO estimates (id, contractor_id, service_address, notes, status, created_at, converted_job_id) VALUES ($1,$2,$3,$4,$5,$6,$7)`, [String(est.id), est.contractorId == null ? null : String(est.contractorId), est.serviceAddress || "", est.notes || "", est.status || "open", est.createdAt || new Date().toISOString(), est.convertedJobId == null ? null : String(est.convertedJobId)]);
-      let index = 0;
-      for (const s of est.services || []) await insertServiceRow(client, "estimate_services", "estimate_id", String(est.id), s, index++);
-    }
-
-    for (const e of db.employees || []) await client.query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`, [String(e.id), e.name || "Unnamed Employee", e.active !== false, e.createdAt || new Date().toISOString()]);
-    for (const t of db.timeClockEntries || []) await client.query(`INSERT INTO time_clock_entries (id, employee_id, employee_name, clock_in, clock_out, minutes, entry_date, clock_in_geo, clock_out_geo) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [String(t.id), t.employeeId == null ? null : String(t.employeeId), t.name || t.employeeName || "", t.clockIn || new Date().toISOString(), t.clockOut || null, t.minutes == null ? null : Number(t.minutes), t.date || todayString(), t.clockInGeo || null, t.clockOutGeo || null]);
-
-    await client.query(`INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start, assigned_employee_ids) VALUES (1,$1,$2,$3,$4,$5)`, [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null, db.dailySetup.assignedEmployeeIds || []]);
-    for (const [date, state] of Object.entries(db.dailySetup.dailyChecklistState || {})) {
-      for (const [item, checked] of Object.entries(state || {})) {
-        await client.query(`INSERT INTO daily_checklist_state (check_date, item, checked) VALUES ($1,$2,$3)`, [date, item, !!checked]);
-      }
-    }
-    await client.query(`INSERT INTO settings (key, value) VALUES ($1,$2)`, ["inventoryLink", { value: db.settings.inventoryLink || "" }]);
-    const qb = db.settings.quickbooks || {};
-    await client.query(`INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at) VALUES (1,$1,$2,$3,$4,$5,$6,$7)`, [!!qb.connected, qb.realmId || null, qb.accessToken || null, qb.refreshToken || null, qb.expiresAt || null, qb.refreshExpiresAt || null, qb.lastConnectedAt || null]);
-
-    for (const ev of db.routeEvents || []) {
-      await client.query(
-        `INSERT INTO route_events (id, action, job_id, service_index, employee_id, employee_name, service_address, formatted_address, latitude, longitude, accuracy, event_date, created_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-        [String(ev.id || uuidv4()), ev.action || "event", ev.jobId == null ? null : String(ev.jobId), ev.serviceIndex == null ? null : Number(ev.serviceIndex), ev.employeeId == null ? null : String(ev.employeeId), ev.employeeName || "", ev.serviceAddress || "", ev.address || ev.formattedAddress || "", ev.latitude == null ? null : Number(ev.latitude), ev.longitude == null ? null : Number(ev.longitude), ev.accuracy == null ? null : Number(ev.accuracy), ev.date || ev.eventDate || (ev.at || "").slice(0,10) || todayString(), ev.at || ev.createdAt || new Date().toISOString()]
-      );
-    }
-
-    await client.query("COMMIT");
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
-}
-
-function writeDb(db, type = "db_updated", payload = {}) {
-  memoryDb = normalizeDbShape(cloneDb(db));
-  persistInFlight = persistInFlight
-    .then(() => persistDbToPostgres(memoryDb))
-    .catch(err => console.error("Postgres persist failed:", err));
-  broadcastUpdate(type, payload);
-}
+// Graceful shutdown
+process.on("SIGTERM", async () => {
+  console.log("SIGTERM received — closing server gracefully");
+  server.close(async () => {
+    try { await pool.end(); } catch(e) {}
+    console.log("Server closed cleanly");
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10000);
+});
 
 async function initializeDatabaseBackedState() {
   await migrateDatabase();
   let loaded = await loadDbFromPostgres();
   const hasData = (loaded.contractors && loaded.contractors.length) || (loaded.inventory && loaded.inventory.length) || (loaded.jobs && loaded.jobs.length);
-  if (!hasData && fs.existsSync(DB_FILE)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(DB_FILE, "utf8"));
-      loaded = normalizeDbShape({ ...defaultState(), ...raw });
-      await persistDbToPostgres(loaded);
-      console.log("Seeded Postgres from db.json");
-    } catch (err) {
-      console.error("Could not seed from db.json:", err.message);
-    }
-  }
+  // db.json seed removed — all data lives in Postgres
+  // (kept for reference: if DB is empty and db.json exists, it was previously used to seed)
   if (!loaded.inventory || !loaded.inventory.length) loaded.inventory = defaultInventory();
   memoryDb = normalizeDbShape(loaded);
 }
@@ -719,6 +678,12 @@ function recordRouteEvent(db, event = {}) {
     date: event.date || todayString()
   };
   db.routeEvents.push(row);
+  // Persist to Postgres immediately — don't wait for next restart
+  query(
+    `INSERT INTO route_events (id, action, job_id, service_index, employee_id, employee_name, service_address, formatted_address, latitude, longitude, accuracy, event_date, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (id) DO NOTHING`,
+    [row.id, row.action, row.jobId, row.serviceIndex, row.employeeId, row.employeeName || "", row.serviceAddress || "", row.address || "", row.latitude, row.longitude, row.accuracy, row.date, row.at]
+  ).catch(e => console.error("Route event persist error:", e));
   return row;
 }
 
@@ -1244,7 +1209,7 @@ async function qbRefreshIfNeeded(db) {
       [!!qb.connected, qb.realmId||null, qb.accessToken||null, qb.refreshToken||null, qb.expiresAt||null, qb.refreshExpiresAt||null, qb.lastConnectedAt||null]
     );
   } catch(e) { console.error("QB token persist error:", e); }
-  memoryDb = normalizeDbShape(cloneDb(db));
+  memoryDb = db;
   return qb.accessToken;
 }
 
@@ -1269,11 +1234,11 @@ async function qbApiRequest(db, method, endpoint, data = null, params = null) {
 }
 
 async function qbFindCustomerByDisplayName(db, displayName) {
-  const safeName = String(displayName).replace(/'/g, "\\'");
-  const query = `select * from Customer where DisplayName = '${safeName}'`;
+  const safeName = String(displayName).replace(/'/g, "''").replace(/%/g, "\\%");
+  const qbQueryStr = `select * from Customer where DisplayName = '${safeName}'`;
 
   const data = await qbApiRequest(db, "get", "/query", null, {
-    query,
+    query: qbQueryStr,
     minorversion: 73
   });
 
@@ -1373,7 +1338,7 @@ app.get("/maps-config", (_req, res) => {
 });
 
 app.get("/settings", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
 
   res.json({
     inventoryLink: db.settings.inventoryLink || "",
@@ -1392,7 +1357,7 @@ app.post("/settings/inventory-link", async (req, res) => {
     db.settings.inventoryLink = cleanString(req.body.inventoryLink);
     await query(`INSERT INTO settings (key, value) VALUES ($1,$2) ON CONFLICT (key) DO UPDATE SET value=$2`,
       ["inventoryLink", { value: db.settings.inventoryLink }]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("settings_updated", {});
     res.json({ inventoryLink: db.settings.inventoryLink });
   } catch (err) { console.error("Settings update error:", err); res.status(500).json({ error: err.message }); }
@@ -1401,7 +1366,7 @@ app.post("/settings/inventory-link", async (req, res) => {
 /* ---------- DAILY SETUP / CHECKLIST ---------- */
 
 app.get("/daily-setup", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   res.json({
     ...db.dailySetup,
     lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
@@ -1445,7 +1410,7 @@ app.post("/daily-setup", async (req, res) => {
   } catch (err) {
     console.error("daily-setup persist error:", err);
   }
-  memoryDb = normalizeDbShape(cloneDb(db));
+  memoryDb = db;
   broadcastUpdate("daily_setup_updated", {});
 
   res.json({
@@ -1460,7 +1425,7 @@ app.post("/daily-lunch-start", async (_req, res) => {
     if (db.dailySetup.activeLunchStart) return res.status(400).json({ error: "Lunch already started" });
     db.dailySetup.activeLunchStart = new Date().toISOString();
     await query(`UPDATE daily_setup SET active_lunch_start=$1 WHERE id=1`, [db.dailySetup.activeLunchStart]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("lunch_started", {});
     res.json({ ...db.dailySetup, lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []) });
   } catch (err) { console.error("Lunch start error:", err); res.status(500).json({ error: err.message }); }
@@ -1473,14 +1438,14 @@ app.post("/daily-lunch-end", async (_req, res) => {
     db.dailySetup.lunchBreaks.push({ start: db.dailySetup.activeLunchStart, end: new Date().toISOString() });
     db.dailySetup.activeLunchStart = null;
     await query(`UPDATE daily_setup SET lunch_breaks=$1, active_lunch_start=NULL WHERE id=1`, [JSON.stringify(db.dailySetup.lunchBreaks)]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("lunch_ended", {});
     res.json({ ...db.dailySetup, lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []) });
   } catch (err) { console.error("Lunch end error:", err); res.status(500).json({ error: err.message }); }
 });
 
 app.get("/daily-checklist", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
 
   res.json({
@@ -1499,7 +1464,7 @@ app.post("/daily-checklist/toggle", async (req, res) => {
     db.dailySetup.dailyChecklistState[date][item] = checked;
     // Write directly to Postgres first, then update memory
     await upsertChecklistState(date, item, checked);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("checklist_updated", { date, item, checked });
     res.json({ ok: true });
   } catch (err) {
@@ -1554,7 +1519,7 @@ app.get("/reporting", (_req, res) => {
 });
 
 app.get("/history", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
 
   const rows = db.jobs
     .filter(j => j.archivedAt || j.finishedAt)
@@ -1571,7 +1536,7 @@ app.get("/history", (_req, res) => {
 /* ---------- CONTRACTORS ---------- */
 
 app.get("/contractors", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const search = cleanString(req.query.search).toLowerCase();
 
   let list = db.contractors;
@@ -1607,7 +1572,7 @@ app.post("/contractors", async (req, res) => {
     };
     db.contractors.push(contractor);
     await upsertContractor(contractor);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("contractor_added", {});
     res.json(contractor);
   } catch (err) {
@@ -1631,7 +1596,7 @@ app.put("/contractors/:id", async (req, res) => {
       ? req.body.serviceAddresses.map(cleanString).filter(Boolean)
       : contractor.serviceAddresses;
     await upsertContractor(contractor);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("contractor_updated", {});
     res.json(contractor);
   } catch (err) {
@@ -1643,14 +1608,14 @@ app.put("/contractors/:id", async (req, res) => {
 /* ---------- JOBS ---------- */
 
 app.get("/jobs", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
   const jobs = activeJobsForDate(db, date).map(j => hydrateJob(j, db));
   res.json(jobs);
 });
 
 app.get("/jobs/next", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
   const currentId = req.query.currentId || null;
   const next = getNextJob(db, date, currentId);
@@ -1681,7 +1646,7 @@ app.post("/jobs", async (req, res) => {
     };
     db.jobs.push(job);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_created", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -1709,7 +1674,7 @@ app.put("/jobs/:id", async (req, res) => {
     }
     if (oldDate !== newDate) job.sortOrder = nextSortOrderForDate(db, newDate);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -1729,7 +1694,7 @@ app.post("/jobs/reorder", async (req, res) => {
     await Promise.all(orderedIds.map((id, index) =>
       query(`UPDATE jobs SET sort_order=$1 WHERE id=$2`, [index + 1, id])
     ));
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("jobs_reordered", {});
     res.json({ ok: true });
   } catch (err) { console.error("Reorder error:", err); res.status(500).json({ error: err.message }); }
@@ -1742,7 +1707,7 @@ app.delete("/jobs/:id", async (req, res) => {
     if (!job) return res.status(404).json({ error: "Job not found" });
     job.deletedAt = new Date().toISOString();
     await query(`UPDATE jobs SET deleted_at=$1 WHERE id=$2`, [job.deletedAt, String(job.id)]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_deleted", { id: job.id });
     res.json({ ok: true });
   } catch (err) {
@@ -1758,7 +1723,7 @@ app.post("/jobs/:id/archive", async (req, res) => {
     if (!job) return res.status(404).json({ error: "Job not found" });
     job.archivedAt = new Date().toISOString();
     await query(`UPDATE jobs SET archived_at=$1 WHERE id=$2`, [job.archivedAt, String(job.id)]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_archived", { id: job.id });
     res.json({ ok: true });
   } catch (err) {
@@ -1783,7 +1748,7 @@ app.post("/jobs/:id/on-my-way", async (req, res) => {
     }
     recordRouteEvent(db, { action: "on_my_way", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -1805,7 +1770,7 @@ app.post("/jobs/:id/arrived", async (req, res) => {
     }
     recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -1822,7 +1787,7 @@ app.post("/jobs/:id/leave-open", async (req, res) => {
     job.openStatus = "open";
     job.finishedAt = null;
     await query(`UPDATE jobs SET open_status='open', finished_at=NULL WHERE id=$1`, [String(job.id)]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_left_open", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -1854,7 +1819,7 @@ app.post("/jobs/:id/continue", async (req, res) => {
     db.jobs.push(job);
     await query(`UPDATE jobs SET open_status='continued' WHERE id=$1`, [String(oldJob.id)]);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_continued", { id: job.id, fromJobId: oldJob.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -1864,7 +1829,7 @@ app.post("/jobs/:id/continue", async (req, res) => {
 });
 
 app.get("/route-history", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
   let rows = db.routeEvents || [];
   rows = rows.filter(r => !date || r.date === date || String(r.at || "").startsWith(date));
@@ -1904,7 +1869,7 @@ app.post("/recurring-jobs", async (req, res) => {
     db.recurringJobs.push({ id: uuidv4(), createdAt: new Date().toISOString(), startDate, frequency: cleanString(req.body.frequency) || "weekly", count: created.length });
     // Save all new jobs directly to Postgres
     for (const j of created) await upsertJob(query, j);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("recurring_jobs_created", { count: created.length });
     res.json({ ok: true, jobs: created.map(j => hydrateJob(j, db)) });
   } catch (err) { console.error("Recurring jobs error:", err); res.status(500).json({ error: err.message }); }
@@ -1939,7 +1904,7 @@ app.post("/jobs/:id/services/:index/on-my-way", async (req, res) => {
     service.onMyWayTime = new Date().toISOString();
     storeServiceGeo(service, "onMyWay", req.body.geo);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) { console.error("Service on-my-way error:", err); res.status(500).json({ error: err.message }); }
@@ -1952,7 +1917,7 @@ app.post("/jobs/:id/services/:index/arrived", async (req, res) => {
     service.arrivedTime = new Date().toISOString();
     storeServiceGeo(service, "arrived", req.body.geo);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) { console.error("Service arrived error:", err); res.status(500).json({ error: err.message }); }
@@ -1968,7 +1933,7 @@ app.post("/jobs/:id/services/:index/start", async (req, res) => {
     storeServiceGeo(service, "start", req.body.geo);
     recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) { console.error("Service start error:", err); res.status(500).json({ error: err.message }); }
@@ -1989,7 +1954,7 @@ app.post("/jobs/:id/services/:index/stop", async (req, res) => {
     }
     const next = getNextJob(db, job.serviceDate, job.id);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id, nextJob: next ? next.id : null });
     res.json({ ok: true, job: hydrateJob(job, db), nextJob: next ? next.id : null });
   } catch (err) { console.error("Service stop error:", err); res.status(500).json({ error: err.message }); }
@@ -2021,7 +1986,7 @@ app.post("/jobs/:id/photos", upload.single("photo"), async (req, res) => {
       [String(photo.id), String(job.id), photo.url, photo.tag, photo.caption || "", photo.createdAt]
     );
   } catch (e) { console.error("Photo insert error:", e); }
-  memoryDb = normalizeDbShape(cloneDb(db));
+  memoryDb = db;
   broadcastUpdate("photo_added", { jobId: job.id, photoId: photo.id });
   res.json(photo);
 });
@@ -2042,7 +2007,7 @@ app.delete("/jobs/:jobId/photos/:photoId", async (req, res) => {
   try {
     await query(`DELETE FROM job_photos WHERE id=$1`, [String(req.params.photoId)]);
   } catch (e) { console.error("Photo delete error:", e); }
-  memoryDb = normalizeDbShape(cloneDb(db));
+  memoryDb = db;
   broadcastUpdate("photo_deleted", { jobId: job.id, photoId: req.params.photoId });
   res.json({ ok: true });
 });
@@ -2050,7 +2015,7 @@ app.delete("/jobs/:jobId/photos/:photoId", async (req, res) => {
 /* ---------- INVENTORY ---------- */
 
 app.get("/inventory", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
 
   res.json({
     items: db.inventory.filter(i => i.active !== false).map(getInventoryViewItem),
@@ -2071,7 +2036,7 @@ app.put("/inventory/:id", async (req, res) => {
     item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
     item.active = req.body.active === undefined ? item.active : !!req.body.active;
     await upsertInventoryItem(item);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("inventory_updated", {});
     res.json(getInventoryViewItem(item));
   } catch (err) {
@@ -2089,7 +2054,7 @@ app.post("/inventory/adjust", async (req, res) => {
     item.quantity = Number((Number(item.quantity || 0) + Number(req.body.delta || 0)).toFixed(2));
     if (item.quantity < 0) item.quantity = 0;
     await upsertInventoryItem(item);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("inventory_updated", {});
     res.json(getInventoryViewItem(item));
   } catch (err) {
@@ -2114,7 +2079,7 @@ app.post("/inventory/add", async (req, res) => {
     };
     db.inventory.push(item);
     await upsertInventoryItem(item);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("inventory_added", {});
     res.json(getInventoryViewItem(item));
   } catch (err) {
@@ -2125,7 +2090,7 @@ app.post("/inventory/add", async (req, res) => {
 /* ---------- ESTIMATES ---------- */
 
 app.get("/estimates", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   res.json(db.estimates.map(e => hydrateEstimate(e, db)).sort((a, b) => Number(b.id) - Number(a.id)));
 });
 
@@ -2145,7 +2110,7 @@ app.post("/estimates", async (req, res) => {
     };
     db.estimates.push(estimate);
     await upsertEstimate(estimate);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("estimate_created", { id: estimate.id });
     res.json(hydrateEstimate(estimate, db));
   } catch (err) {
@@ -2185,7 +2150,7 @@ app.post("/estimates/:id/convert", async (req, res) => {
     db.jobs.push(job);
     await upsertEstimate(estimate);
     await upsertJob(query, job);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("estimate_converted", { estimateId: estimate.id, jobId: job.id });
     res.json(hydrateJob(job, db));
   } catch (err) {
@@ -2208,7 +2173,7 @@ app.get("/estimate/:id/pdf", async (req, res) => {
 /* ---------- FINISH DAY ---------- */
 
 app.get("/finish-day-summary", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
   const jobs = activeJobsForDate(db, date).map(j => hydrateJob(j, db));
 
@@ -2249,7 +2214,7 @@ app.post("/finish-day", async (req, res) => {
   }
 
   // Update inventory in memory immediately; full persist happens at day_finished
-  memoryDb = normalizeDbShape(cloneDb(db));
+  memoryDb = db;
 
   const hydratedJobs = finishedRawJobs.map(j => hydrateJob(j, db));
 
@@ -2259,17 +2224,23 @@ app.post("/finish-day", async (req, res) => {
   const archive = archiver("zip", { zlib: { level: 9 } });
 
   output.on("close", async () => {
-    const db2 = readDb();
-    finishedRawJobs.forEach(j => {
-      const dbJob = db2.jobs.find(x => String(x.id) === String(j.id));
-      if (dbJob) dbJob.archivedAt = new Date().toISOString();
-    });
+    const archivedAt = new Date().toISOString();
+    const ids = finishedRawJobs.map(j => String(j.id));
+    try {
+      // Archive all finished jobs in one atomic UPDATE
+      await query(
+        `UPDATE jobs SET archived_at=$1 WHERE id = ANY($2::text[])`,
+        [archivedAt, ids]
+      );
+    } catch(e) { console.error("Bulk archive error on finish-day:", e); }
 
-    // Directly archive each finished job in Postgres
-    for (const j of finishedRawJobs) {
-      try { await query(`UPDATE jobs SET archived_at=$1 WHERE id=$2`, [new Date().toISOString(), String(j.id)]); } catch(e) { console.error("Archive job on finish-day error:", e); }
-    }
-    memoryDb = normalizeDbShape(cloneDb(db2));
+    // Update memory
+    const db2 = readDb();
+    ids.forEach(id => {
+      const dbJob = db2.jobs.find(x => String(x.id) === id);
+      if (dbJob) dbJob.archivedAt = archivedAt;
+    });
+    memoryDb = db2;
     broadcastUpdate("day_finished", {});
 
     res.json({
@@ -2401,7 +2372,7 @@ app.get("/invoice/:id", (req, res) => {
 /* ---------- QUICKBOOKS ---------- */
 
 app.get("/qb/status", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const qb = qbSettings(db);
 
   res.json({
@@ -2465,15 +2436,16 @@ app.get("/qb/callback", async (req, res) => {
       lastConnectedAt: new Date().toISOString()
     };
 
+    const _qb = db.settings.quickbooks;
     try {
-    await query(
-      `INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at)
-       VALUES (1,$1,$2,$3,$4,$5,$6,$7)
-       ON CONFLICT (id) DO UPDATE SET connected=$1, realm_id=$2, access_token=$3, refresh_token=$4, expires_at=$5, refresh_expires_at=$6, last_connected_at=$7`,
-      [!!qb.connected, qb.realmId||null, qb.accessToken||null, qb.refreshToken||null, qb.expiresAt||null, qb.refreshExpiresAt||null, qb.lastConnectedAt||null]
-    );
+      await query(
+        `INSERT INTO quickbooks_tokens (id, connected, realm_id, access_token, refresh_token, expires_at, refresh_expires_at, last_connected_at)
+         VALUES (1,$1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (id) DO UPDATE SET connected=$1, realm_id=$2, access_token=$3, refresh_token=$4, expires_at=$5, refresh_expires_at=$6, last_connected_at=$7`,
+        [!!_qb.connected, _qb.realmId||null, _qb.accessToken||null, _qb.refreshToken||null, _qb.expiresAt||null, _qb.refreshExpiresAt||null, _qb.lastConnectedAt||null]
+      );
     } catch(e) { console.error("QB connect persist error:", e); }
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("qb_connected", {});
     res.redirect("/");
   } catch (e) {
@@ -2483,7 +2455,7 @@ app.get("/qb/callback", async (req, res) => {
 });
 
 app.get("/qb/review", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
 
   res.json({
@@ -2535,7 +2507,7 @@ app.post("/qb/send-day", async (req, res) => {
     try { await query(`UPDATE jobs SET quickbooks_status=$1, quickbooks_invoice_id=$2 WHERE id=$3`,
       [r.success ? "sent" : "error", r.invoiceId||null, String(r.id)]); } catch(e) {}
   }
-  memoryDb = normalizeDbShape(cloneDb(db));
+  memoryDb = db;
   broadcastUpdate("qb_sent", {});
   res.json({ sent, failed, results });
 });
@@ -2544,7 +2516,7 @@ app.post("/qb/send-day", async (req, res) => {
 /* ---------- EMPLOYEES / TIME CLOCK ---------- */
 
 app.get("/employees", (_req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   res.json((db.employees || []).filter(e => e.active !== false));
 });
 
@@ -2557,7 +2529,7 @@ app.post("/employees", async (req, res) => {
     db.employees.push(employee);
     await query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`,
       [String(employee.id), employee.name, true, employee.createdAt]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("employee_added", {});
     res.json(employee);
   } catch (err) { console.error("Add employee error:", err); res.status(500).json({ error: err.message }); }
@@ -2571,7 +2543,7 @@ app.put("/employees/:id", async (req, res) => {
     if (req.body.name !== undefined) employee.name = cleanString(req.body.name);
     if (req.body.active !== undefined) employee.active = !!req.body.active;
     await query(`UPDATE employees SET name=$1, active=$2 WHERE id=$3`, [employee.name, employee.active, String(employee.id)]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("employee_updated", {});
     res.json(employee);
   } catch (err) { console.error("Update employee error:", err); res.status(500).json({ error: err.message }); }
@@ -2584,14 +2556,14 @@ app.delete("/employees/:id", async (req, res) => {
     if (!employee) return res.status(404).json({ error: "Employee not found" });
     employee.active = false;
     await query(`UPDATE employees SET active=false WHERE id=$1`, [String(employee.id)]);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("employee_removed", {});
     res.json({ ok: true });
   } catch (err) { console.error("Remove employee error:", err); res.status(500).json({ error: err.message }); }
 });
 
 app.get("/time-clock", (req, res) => {
-  const db = readDb();
+  const db = readDbRO();
   const date = cleanString(req.query.date);
   let rows = db.timeClockEntries || [];
   if (date) rows = rows.filter(r => r.date === date);
@@ -2612,7 +2584,7 @@ app.post("/time-clock/clock-in", async (req, res) => {
     recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
     // Write directly to Postgres first, then update memory
     await upsertClockEntry(row);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("employee_clocked_in", {});
     res.json(row);
   } catch (err) {
@@ -2635,7 +2607,7 @@ app.post("/time-clock/clock-out", async (req, res) => {
     row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
     // Write directly to Postgres first, then update memory
     await upsertClockEntry(row);
-    memoryDb = normalizeDbShape(cloneDb(db));
+    memoryDb = db;
     broadcastUpdate("employee_clocked_out", {});
     res.json(row);
   } catch (err) {
