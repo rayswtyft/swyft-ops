@@ -4653,12 +4653,111 @@ async function saveScheduleCrew() {
         (!todayCrew.length ? '<div class="muted" style="font-size:13px;margin-top:6px;">No crew assigned. Set crew in Manager Setup.</div>' : '');
     }
 
+
+    // ===== WEBAUTHN BIOMETRIC =====
+    // Store: { employeeId -> credentialId (base64) }
+    function getBioCreds() {
+      try { return JSON.parse(localStorage.getItem("swyfBioCreds") || "{}"); } catch { return {}; }
+    }
+    function saveBioCreds(creds) {
+      localStorage.setItem("swyfBioCreds", JSON.stringify(creds));
+    }
+
+    function bufferToBase64(buf) {
+      return btoa(String.fromCharCode(...new Uint8Array(buf)));
+    }
+    function base64ToBuffer(b64) {
+      const binary = atob(b64);
+      const buf = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
+      return buf.buffer;
+    }
+
+    async function bioSupported() {
+      if (!window.PublicKeyCredential) return false;
+      try {
+        return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+      } catch { return false; }
+    }
+
+    async function enrollBiometric(employeeId, employeeName) {
+      if (!(await bioSupported())) {
+        alert("This device does not support biometric authentication.");
+        return false;
+      }
+      try {
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const cred = await navigator.credentials.create({
+          publicKey: {
+            challenge,
+            rp: { name: "Swyft Ops", id: location.hostname },
+            user: {
+              id: new TextEncoder().encode(String(employeeId)),
+              name: employeeName,
+              displayName: employeeName
+            },
+            pubKeyCredParams: [
+              { type: "public-key", alg: -7 },
+              { type: "public-key", alg: -257 }
+            ],
+            authenticatorSelection: {
+              authenticatorAttachment: "platform",
+              userVerification: "required"
+            },
+            timeout: 60000
+          }
+        });
+        const creds = getBioCreds();
+        creds[String(employeeId)] = bufferToBase64(cred.rawId);
+        saveBioCreds(creds);
+        return true;
+      } catch (err) {
+        if (err.name !== "NotAllowedError") alert("Enrollment failed: " + err.message);
+        return false;
+      }
+    }
+
+    async function verifyBiometric(employeeId) {
+      const creds = getBioCreds();
+      const credId = creds[String(employeeId)];
+      if (!credId) return null; // not enrolled
+      if (!(await bioSupported())) return null;
+      try {
+        const challenge = crypto.getRandomValues(new Uint8Array(32));
+        const assertion = await navigator.credentials.get({
+          publicKey: {
+            challenge,
+            allowCredentials: [{
+              type: "public-key",
+              id: base64ToBuffer(credId),
+              transports: ["internal"]
+            }],
+            userVerification: "required",
+            timeout: 60000
+          }
+        });
+        return assertion ? true : false;
+      } catch (err) {
+        if (err.name !== "NotAllowedError") alert("Biometric check failed: " + err.message);
+        return false;
+      }
+    }
+    // ===== END WEBAUTHN =====
+
     async function clockInEmployee(){
       const employeeId = document.getElementById("employeeClockEmployee")?.value;
       if (!employeeId) return alert("Choose an employee");
       const crew = todayCrew || [];
       const employee = crew.find(e => String(e.id) === String(employeeId));
       if (employee?.clockedIn) return alert((employee?.name || "Employee") + " is already clocked in");
+
+      // Biometric check if enrolled
+      const creds = getBioCreds();
+      if (creds[String(employeeId)]) {
+        const verified = await verifyBiometric(employeeId);
+        if (verified === false) return alert("Biometric verification failed. Clock-in denied.");
+        if (verified === null) { /* not available, fall through */ }
+      }
 
       const res = await fetch("/time-clock/clock-in", {
         method:"POST",
@@ -4734,17 +4833,43 @@ async function saveScheduleCrew() {
       $("employeeManagerModal").classList.add("hidden");
     }
 
+    async function enrollEmployeeBio(id, name) {
+      const ok = await enrollBiometric(id, name);
+      if (ok) {
+        alert(name + " fingerprint enrolled successfully! They must use Touch ID to clock in on this device.");
+        renderEmployeeManagerList();
+      }
+    }
+
+    function removeEmployeeBio(id, name) {
+      if (!confirm("Remove biometric for " + name + "? They will be able to clock in without fingerprint on this device.")) return;
+      const creds = getBioCreds();
+      delete creds[String(id)];
+      saveBioCreds(creds);
+      renderEmployeeManagerList();
+    }
+
     function renderEmployeeManagerList(){
-      $("employeeManagerList").innerHTML = employees.length ? employees.map(e => `
+      const creds = getBioCreds();
+      $("employeeManagerList").innerHTML = employees.length ? employees.map(e => {
+        const enrolled = !!creds[String(e.id)];
+        return `
         <div class="employee-admin-row">
           <strong>${e.name}</strong>
+          ${enrolled ? '<div style="color:#16a34a;font-size:13px;margin-top:4px;">✅ Touch ID enrolled on this device</div>' : '<div style="color:#f59e0b;font-size:13px;margin-top:4px;">⚠️ No biometric — anyone can clock in as this employee</div>'}
           <div class="row" style="margin-top:8px;">
             <input id="employee-edit-${e.id}" value="${e.name}" />
             <button class="green" onclick="saveEmployeeName(${e.id})">Save</button>
           </div>
-          <button class="red" style="margin-top:8px;" onclick="removeEmployee(${e.id})">Remove</button>
+          <div class="row" style="margin-top:8px;">
+            ${enrolled
+              ? `<button class="orange" onclick="removeEmployeeBio(${e.id}, '${e.name}')">Remove Fingerprint</button>`
+              : `<button class="secondary" onclick="enrollEmployeeBio(${e.id}, '${e.name}')">Enroll Fingerprint 👆</button>`
+            }
+            <button class="red" onclick="removeEmployee(${e.id})">Remove Employee</button>
+          </div>
         </div>
-      `).join("") : `<div class="muted" style="margin-top:10px;">No employees yet.</div>`;
+      `}).join("") : `<div class="muted" style="margin-top:10px;">No employees yet.</div>`;
     }
 
     async function addEmployeeFromManager(){
