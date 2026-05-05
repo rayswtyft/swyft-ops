@@ -1637,8 +1637,13 @@ function junkOptionsForService(service){
         const mapsRes = await fetch("/maps-config");
         const mapsData = await mapsRes.json();
         googleMapsApiKey = mapsData.googleMapsApiKey || "";
-        setTimeout(initVisibleAddressAutocompletes, 250);
-      } catch (_) {}
+        if (googleMapsApiKey) {
+          // Pre-load the script so it's ready when modals open
+          loadGooglePlacesScript().then(loaded => {
+            if (loaded) initVisibleAddressAutocompletes();
+          });
+        }
+      } catch (e) { console.warn("Maps config load error:", e); }
 
       const res = await fetch("/settings");
 
@@ -3382,12 +3387,21 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       if (window.google?.maps?.places) return Promise.resolve(true);
       if (googlePlacesScriptLoading) return googlePlacesScriptLoading;
       googlePlacesScriptLoading = new Promise(resolve => {
+        // Remove any old failed script tags first
+        document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
+        window.google = undefined;
         const script = document.createElement("script");
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places`;
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places&loading=async`;
         script.async = true;
-        script.defer = true;
-        script.onload = () => resolve(true);
-        script.onerror = () => resolve(false);
+        script.onload = () => {
+          // Give the Maps SDK a moment to fully initialize
+          setTimeout(() => resolve(true), 200);
+        };
+        script.onerror = (e) => {
+          console.warn("Google Maps script failed to load:", e);
+          googlePlacesScriptLoading = null; // allow retry
+          resolve(false);
+        };
         document.head.appendChild(script);
       });
       return googlePlacesScriptLoading;
@@ -3397,7 +3411,17 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       const input = $(inputId);
       if (!input || input.dataset.autocompleteReady === "1") return;
       const loaded = await loadGooglePlacesScript();
-      if (!loaded || !window.google?.maps?.places) return;
+      if (!loaded) return;
+      // Wait up to 2s for google.maps.places to be available
+      let attempts = 0;
+      while (!window.google?.maps?.places && attempts < 20) {
+        await new Promise(r => setTimeout(r, 100));
+        attempts++;
+      }
+      if (!window.google?.maps?.places) {
+        console.warn("Google Maps Places not available for", inputId);
+        return;
+      }
       const autocomplete = new google.maps.places.Autocomplete(input, {
         types: ["address"],
         fields: ["formatted_address", "name", "geometry"]
@@ -4429,3 +4453,4 @@ async function saveScheduleCrew() {
 </body>
 
 </html>
+
