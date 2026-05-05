@@ -353,6 +353,7 @@ await query(`
   await query(`ALTER TABLE time_clock_entries ADD COLUMN IF NOT EXISTS clock_out_geo JSONB`);
   await query(`CREATE TABLE IF NOT EXISTS daily_checklist_state (id SERIAL PRIMARY KEY, check_date TEXT, item TEXT, checked BOOLEAN DEFAULT false, UNIQUE(check_date, item))`);
   await query(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value JSONB)`);
+  await query(`CREATE TABLE IF NOT EXISTS inventory_movements (id SERIAL PRIMARY KEY, item_id TEXT, item_name TEXT, delta NUMERIC, new_quantity NUMERIC, reason TEXT, moved_by TEXT, moved_at TEXT DEFAULT NOW())`);
   await query(`CREATE TABLE IF NOT EXISTS quickbooks_tokens (id INTEGER PRIMARY KEY, connected BOOLEAN DEFAULT false, realm_id TEXT, access_token TEXT, refresh_token TEXT, expires_at TEXT, refresh_expires_at TEXT, last_connected_at TEXT)`);
 }
 
@@ -1444,32 +1445,56 @@ app.post("/daily-lunch-end", async (_req, res) => {
   } catch (err) { console.error("Lunch end error:", err); res.status(500).json({ error: err.message }); }
 });
 
+// Legacy endpoint kept for backward compat
 app.get("/daily-checklist", (req, res) => {
   const db = readDbRO();
   const date = cleanString(req.query.date) || db.dailySetup.date || todayString();
+  res.json({ date, items: buildChecklistWithState(date, db) });
+});
 
-  res.json({
-    date,
-    items: buildChecklistWithState(date, db)
-  });
+// New local-first checklist: returns item list + server state for seeding fresh devices
+app.get("/checklist-items", (req, res) => {
+  const db = readDbRO();
+  const date = cleanString(req.query.date) || todayString();
+  const items = dailyChecklistForDate(date, db);
+  const state = db.dailySetup.dailyChecklistState?.[date] || {};
+  // Convert state array to object: {itemName: true/false}
+  const serverState = {};
+  items.forEach(item => { serverState[item] = !!state[item]; });
+  res.json({ date, items, serverState });
+});
+
+// New toggle endpoint (background sync from local-first client)
+app.post("/checklist-toggle", async (req, res) => {
+  try {
+    const db = readDb();
+    const date = cleanString(req.body.date) || todayString();
+    const item = cleanString(req.body.item);
+    const checked = !!req.body.checked;
+    db.dailySetup.dailyChecklistState[date] ||= {};
+    db.dailySetup.dailyChecklistState[date][item] = checked;
+    await upsertChecklistState(date, item, checked);
+    memoryDb = db;
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Checklist toggle error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/daily-checklist/toggle", async (req, res) => {
   try {
     const db = readDb();
-    const date = cleanString(req.body.date) || db.dailySetup.date || todayString();
+    const date = cleanString(req.body.date) || todayString();
     const item = cleanString(req.body.item);
     const checked = !!req.body.checked;
     db.dailySetup.dailyChecklistState[date] ||= {};
     db.dailySetup.dailyChecklistState[date][item] = checked;
-    // Write directly to Postgres first, then update memory
     await upsertChecklistState(date, item, checked);
     memoryDb = db;
-    broadcastUpdate("checklist_updated", { date, item, checked });
     res.json({ ok: true });
   } catch (err) {
-    console.error("Checklist toggle error:", err);
-    res.status(500).json({ error: "Checklist save failed: " + err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -2041,12 +2066,12 @@ app.put("/inventory/:id", async (req, res) => {
     const db = readDb();
     const item = db.inventory.find(i => String(i.id) === String(req.params.id));
     if (!item) return res.status(404).json({ error: "Inventory item not found" });
-    item.name = cleanString(req.body.name) || item.name;
-    item.category = cleanString(req.body.category) || item.category || "supply";
-    item.location = cleanString(req.body.location) || item.location || "van";
-    item.quantity = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
-    item.unit = cleanString(req.body.unit) || item.unit;
-    item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
+    if (req.body.name !== undefined) item.name = cleanString(req.body.name) || item.name;
+    if (req.body.category !== undefined) item.category = cleanString(req.body.category) || item.category || "supply";
+    if (req.body.location !== undefined) item.location = cleanString(req.body.location) || item.location || "van";
+    if (req.body.quantity !== undefined) item.quantity = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
+    if (req.body.unit !== undefined) item.unit = cleanString(req.body.unit) || item.unit;
+    if (req.body.reorderPoint !== undefined) item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
     item.active = req.body.active === undefined ? item.active : !!req.body.active;
     await upsertInventoryItem(item);
     memoryDb = db;
@@ -2064,9 +2089,16 @@ app.post("/inventory/adjust", async (req, res) => {
     const item = db.inventory.find(i => String(i.id) === String(req.body.id));
     if (!item) return res.status(404).json({ error: "Item not found" });
     if (item.quantity == null) return res.status(400).json({ error: "This item does not track quantity" });
-    item.quantity = Number((Number(item.quantity || 0) + Number(req.body.delta || 0)).toFixed(2));
+    const delta = Number(req.body.delta || 0);
+    const oldQty = Number(item.quantity || 0);
+    item.quantity = Number((oldQty + delta).toFixed(2));
     if (item.quantity < 0) item.quantity = 0;
     await upsertInventoryItem(item);
+    // Log the movement
+    await query(
+      `INSERT INTO inventory_movements (item_id, item_name, delta, new_quantity, reason, moved_by) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [String(item.id), item.name, delta, item.quantity, req.body.reason || "manual", req.body.movedBy || "unknown"]
+    ).catch(() => {}); // non-critical
     memoryDb = db;
     broadcastUpdate("inventory_updated", {});
     res.json(getInventoryViewItem(item));
