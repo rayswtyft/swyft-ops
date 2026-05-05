@@ -3833,13 +3833,18 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
           body: JSON.stringify({ date, item, checked })
         });
         if (!res.ok) throw new Error("Checklist save failed");
+        // Update the count badge locally without re-fetching
+        const allRows = document.querySelectorAll("#dailyChecklist .check-row");
+        const checkedCount = Array.from(allRows).filter(r => r.classList.contains("checked")).length;
+        $("checkMeta").innerText = `${checkedCount}/${allRows.length} checked`;
+        // Hold the save lock for 3 seconds after success so auto-refresh can't overwrite
+        setTimeout(() => { checklistSaving = false; }, 3000);
       } catch (err) {
         if (el) el.classList.toggle("checked", !checked);
         const input = el?.querySelector('input[type="checkbox"]');
         if (input) input.checked = !checked;
-        alert("Checklist save failed. Please try again.");
-      } finally {
         checklistSaving = false;
+        alert("Checklist save failed. Please try again.");
       }
     }
 
