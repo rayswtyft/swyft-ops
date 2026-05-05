@@ -1646,6 +1646,19 @@ app.post("/jobs", async (req, res) => {
     };
     db.jobs.push(job);
     await upsertJob(query, job);
+    // Auto-save service address to contractor's address list if it's new
+    if (job.serviceAddress && job.contractorId) {
+      const contractor = db.contractors.find(c => String(c.id) === job.contractorId);
+      if (contractor) {
+        contractor.serviceAddresses = contractor.serviceAddresses || [];
+        const normalized = job.serviceAddress.trim().toLowerCase();
+        const already = contractor.serviceAddresses.some(a => a.trim().toLowerCase() === normalized);
+        if (!already) {
+          contractor.serviceAddresses.push(job.serviceAddress.trim());
+          await upsertContractor(contractor);
+        }
+      }
+    }
     memoryDb = db;
     broadcastUpdate("job_created", { id: job.id });
     res.json(hydrateJob(job, db));
@@ -2576,6 +2589,11 @@ app.post("/time-clock/clock-in", async (req, res) => {
     const employeeId = String(req.body.employeeId || "");
     const employee = (db.employees || []).find(e => String(e.id) === employeeId && e.active !== false);
     if (!employee) return res.status(404).json({ error: "Employee not found" });
+    // Enforce: only assigned employees can clock in (if any are assigned for today)
+    const assignedIds = (db.dailySetup?.assignedEmployeeIds || []).map(String);
+    if (assignedIds.length > 0 && !assignedIds.includes(employeeId)) {
+      return res.status(403).json({ error: `${employee.name} is not scheduled to work today` });
+    }
     db.timeClockEntries ||= [];
     const active = db.timeClockEntries.find(r => String(r.employeeId) === employeeId && !r.clockOut);
     if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });

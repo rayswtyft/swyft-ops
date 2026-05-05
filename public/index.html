@@ -3390,16 +3390,18 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
         // Remove any old failed script tags first
         document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
         window.google = undefined;
-        const script = document.createElement("script");
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(googleMapsApiKey)}&libraries=places&loading=async`;
-        script.async = true;
-        script.onload = () => {
-          // Give the Maps SDK a moment to fully initialize
-          setTimeout(() => resolve(true), 200);
+        const callbackName = "__gmpsCb_" + Date.now();
+        window[callbackName] = function() {
+          // Callback fires when Maps JS is fully ready
+          setTimeout(() => resolve(true), 50);
         };
+        const script = document.createElement("script");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=${callbackName}`;
+        script.async = true;
+        script.defer = true;
         script.onerror = (e) => {
           console.warn("Google Maps script failed to load:", e);
-          googlePlacesScriptLoading = null; // allow retry
+          googlePlacesScriptLoading = null;
           resolve(false);
         };
         document.head.appendChild(script);
@@ -3412,9 +3414,9 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       if (!input || input.dataset.autocompleteReady === "1") return;
       const loaded = await loadGooglePlacesScript();
       if (!loaded) return;
-      // Wait up to 2s for google.maps.places to be available
+      // Wait up to 3s for google.maps.places to be available
       let attempts = 0;
-      while (!window.google?.maps?.places && attempts < 20) {
+      while (!window.google?.maps?.places && attempts < 30) {
         await new Promise(r => setTimeout(r, 100));
         attempts++;
       }
@@ -3422,15 +3424,20 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
         console.warn("Google Maps Places not available for", inputId);
         return;
       }
-      const autocomplete = new google.maps.places.Autocomplete(input, {
-        types: ["address"],
-        fields: ["formatted_address", "name", "geometry"]
-      });
-      autocomplete.addListener("place_changed", () => {
-        const place = autocomplete.getPlace();
-        if (place?.formatted_address) input.value = place.formatted_address;
-      });
-      input.dataset.autocompleteReady = "1";
+      try {
+        const autocomplete = new google.maps.places.Autocomplete(input, {
+          types: ["address"],
+          componentRestrictions: { country: "us" },
+          fields: ["formatted_address", "name", "geometry"]
+        });
+        autocomplete.addListener("place_changed", () => {
+          const place = autocomplete.getPlace();
+          if (place?.formatted_address) input.value = place.formatted_address;
+        });
+        input.dataset.autocompleteReady = "1";
+      } catch(e) {
+        console.warn("Autocomplete init error:", e);
+      }
     }
 
     function initVisibleAddressAutocompletes(){
