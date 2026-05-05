@@ -275,21 +275,17 @@
     }
 
     .check-shell{
+
       background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);
+
       border:1px solid #dce7f2;
+
       border-radius:20px;
+
       padding:12px;
+
       margin-top:10px;
-    }
-    .inv-tab{
-      background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;
-      border-radius:20px;padding:6px 14px;font-size:14px;font-weight:600;cursor:pointer;
-      transition:all .15s;
-    }
-    .inv-tab.active{background:#1e3a5f;color:#fff;border-color:#1e3a5f;}
-    .low-badge{
-      display:inline-block;background:#dc2626;color:#fff;
-      border-radius:10px;font-size:11px;font-weight:700;padding:1px 6px;margin-left:4px;
+
     }
 
     .check-row{
@@ -1135,74 +1131,35 @@
 
 
   <div id="inventoryModal" class="modal hidden">
+
     <div class="modal-content">
+
       <div class="inventory-topbar">
+
         <div>
-          <h2>📦 Inventory</h2>
-          <div class="muted" id="invLowBadge"></div>
+
+          <h2>Inventory</h2>
+
+          <div class="muted">View all inventory. Editing is off until you choose Edit Inventory.</div>
+
         </div>
+
         <div class="sync-line">
-          <button id="invAddBtn" class="secondary hidden" style="width:auto;" onclick="showAddInventoryForm()">+ Add Item</button>
-          <button id="inventoryEditBtn" class="secondary" style="width:auto;" onclick="toggleInventoryEdit()">Edit</button>
+
+          <button id="inventoryEditBtn" class="secondary" style="width:auto;" onclick="toggleInventoryEdit()">Edit Inventory</button>
+
+          <button id="inventorySaveBtn" class="green hidden" style="width:auto;" onclick="saveInventoryEdits()">Save Changes</button>
+
           <button class="secondary" style="width:auto;" onclick="closeInventoryModal()">Close</button>
-        </div>
-      </div>
 
-      <!-- Location Tabs -->
-      <div style="display:flex;gap:8px;margin:12px 0;">
-        <button id="invTab-all" class="inv-tab active" onclick="setInvTab('all')">All</button>
-        <button id="invTab-van" class="inv-tab" onclick="setInvTab('van')">🚐 Van <span id="invLow-van" class="low-badge hidden"></span></button>
-        <button id="invTab-truck" class="inv-tab" onclick="setInvTab('truck')">🚛 Truck <span id="invLow-truck" class="low-badge hidden"></span></button>
-        <button id="invTab-warehouse" class="inv-tab" onclick="setInvTab('warehouse')">🏭 Warehouse <span id="invLow-warehouse" class="low-badge hidden"></span></button>
-      </div>
+        </div>
 
-      <!-- Add Item Form (hidden by default) -->
-      <div id="invAddForm" class="service-card hidden">
-        <h3>Add Inventory Item</h3>
-        <input id="newInvName" placeholder="Item name" />
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <select id="newInvCategory" style="flex:1;min-width:120px;">
-            <option value="supply">Supply</option>
-            <option value="tool">Tool</option>
-            <option value="equipment">Equipment</option>
-          </select>
-          <select id="newInvLocation" style="flex:1;min-width:120px;">
-            <option value="van">Van</option>
-            <option value="truck">Truck</option>
-            <option value="warehouse">Warehouse</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
-          <input id="newInvQty" type="number" step="1" value="" placeholder="Qty (blank = not tracked)" style="flex:1;min-width:80px;" />
-          <input id="newInvUnit" value="pieces" placeholder="Unit" style="flex:1;min-width:80px;" />
-          <input id="newInvReorder" type="number" step="1" placeholder="Reorder at" style="flex:1;min-width:80px;" />
-        </div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <button class="green" onclick="addInventoryItem()">Add Item</button>
-          <button class="secondary" onclick="hideAddInventoryForm()">Cancel</button>
-        </div>
       </div>
 
       <div id="inventoryModalList"></div>
-    </div>
-  </div>
 
-  <!-- Inventory Adjust Modal (quick +/-) -->
-  <div id="invAdjustModal" class="modal hidden">
-    <div class="modal-content" style="max-width:340px;">
-      <h2 id="invAdjTitle">Adjust Stock</h2>
-      <div class="muted" id="invAdjCurrent"></div>
-      <div style="display:flex;gap:12px;align-items:center;justify-content:center;margin:20px 0;">
-        <button class="orange" style="font-size:28px;width:56px;height:56px;border-radius:50%;padding:0;" onclick="invAdjStep(-1)">−</button>
-        <input id="invAdjQty" type="number" step="1" value="1" style="width:80px;text-align:center;font-size:24px;font-weight:700;" />
-        <button class="green" style="font-size:28px;width:56px;height:56px;border-radius:50%;padding:0;" onclick="invAdjStep(1)">+</button>
-      </div>
-      <div style="display:flex;gap:8px;">
-        <button class="red" style="flex:1;" onclick="commitInvAdj(-1)">Remove</button>
-        <button class="green" style="flex:1;" onclick="commitInvAdj(1)">Add</button>
-        <button class="secondary" style="flex:1;" onclick="closeInvAdjModal()">Cancel</button>
-      </div>
     </div>
+
   </div>
 
 
@@ -1359,20 +1316,9 @@
     let inventoryEditMode = false;
 
     let dailySetup = { date: "", crewSize: 1, lunchMinutes: 0 };
-    // ---- LOCAL-FIRST CHECKLIST STATE ----
-    // State lives in localStorage, server is secondary
-    let checklistItems = [];   // [{item, category}] - list from server, never changes intraday
-    let checklistDate = "";    // date these items belong to
-    function clsKey(date) { return `swyft_cl_${date}`; }
-    function loadClsLocal(date) {
-      try { return JSON.parse(localStorage.getItem(clsKey(date)) || "{}"); } catch { return {}; }
-    }
-    function saveClsLocal(date, state) {
-      localStorage.setItem(clsKey(date), JSON.stringify(state));
-    }
-    function clsChecked(item) {
-      return !!(loadClsLocal(checklistDate)[item]);
-    }
+    let checklistExpanded = localStorage.getItem("swyftChecklistExpanded") !== "false";
+    let checklistSaving = false;
+    let lastChecklistTouch = 0;  // timestamp of last checklist interaction
 
     let selectedJobId = null;
 
@@ -1834,106 +1780,53 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
     async function loadChecklist(force){
-      const date = todayLocalDate();
-      try {
-        const res = await fetch(`/checklist-items?date=${encodeURIComponent(date)}`);
-        const data = await res.json();
-        const newDate = data.date || date;
-        const newItems = data.items || [];
 
-        if (newDate !== checklistDate || force) {
-          checklistDate = newDate;
-          checklistItems = newItems;
-          // Seed local state from server (only on first load or date change)
-          const serverState = data.serverState || {};
-          const localState = loadClsLocal(checklistDate);
-          const mergedState = Object.keys(localState).length ? localState : serverState;
-          saveClsLocal(checklistDate, mergedState);
-          renderChecklist();
-        } else {
-          if (JSON.stringify(newItems) !== JSON.stringify(checklistItems)) {
-            checklistItems = newItems;
-            renderChecklist();
-          } else {
-            updateChecklistBadge();
-          }
-        }
-      } catch(e) { console.warn("Checklist load error:", e); }
-    }
+      const date = currentDate();
 
-    function renderChecklist() {
-      if (!checklistItems.length) {
-        $("dailyChecklist").innerHTML = `<div class="muted" style="margin-top:10px;">No jobs scheduled today — no checklist needed.</div>`;
-        $("checkMeta").innerText = "";
+      const res = await fetch(`/daily-checklist?date=${encodeURIComponent(date)}`);
+
+      const data = await res.json();
+
+
+
+      const checkedCount = data.items.filter(i => i.checked).length;
+
+      $("checkMeta").innerText = `${checkedCount}/${data.items.length} checked`;
+
+
+
+      if (!data.items.length) {
+
+        $("dailyChecklist").innerHTML = `<div class="muted" style="margin-top:10px;">No checklist items yet for this day.</div>`;
+
         return;
-      }
-      const state = loadClsLocal(checklistDate);
-      const checkedCount = checklistItems.filter(i => state[i]).length;
-      const total = checklistItems.length;
-      const allDone = checkedCount === total && total > 0;
 
-      $("checkMeta").innerText = `${checkedCount}/${total} checked`;
-
-      if (allDone) {
-        $("dailyChecklist").innerHTML = `
-          <div style="background:#dcfce7;border:2px solid #86efac;border-radius:16px;padding:20px;text-align:center;margin-top:10px;">
-            <div style="font-size:32px;">✅</div>
-            <div style="font-weight:700;font-size:18px;color:#15803d;margin-top:6px;">All Clear!</div>
-            <div style="color:#166534;font-size:14px;margin-top:4px;">All ${total} items loaded and ready.</div>
-            <button class="secondary" style="margin-top:12px;width:auto;" onclick="uncheckAllChecklist()">Reset Checklist</button>
-          </div>`;
-        return;
       }
+
+      // Don't re-render if user is actively interacting with checklist (prevents checkbox flicker)
+      // Also block for 10 seconds after any checklist touch (mobile checkboxes lose focus instantly)
+      const checklistRecentlyTouched = (Date.now() - lastChecklistTouch) < 10000;
+      if (!force && (checklistSaving || checklistRecentlyTouched || (document.activeElement && $("dailyChecklist").contains(document.activeElement)))) return;
 
       $("dailyChecklist").innerHTML = `
-        <div class="check-shell">
-          ${checklistItems.map(item => {
-            const checked = !!state[item];
-            return `<label class="check-row ${checked ? "checked" : ""}" onclick="toggleChecklist(${JSON.stringify(item)}, this)">
-              <input type="checkbox" ${checked ? "checked" : ""} style="pointer-events:none;" />
-              <span class="check-label">${item}</span>
-            </label>`;
-          }).join("")}
-        </div>`;
+        <button class="secondary" onclick="toggleChecklistPanel()">${checklistExpanded ? "Hide Checklist" : "View Checklist"}</button>
+        ${checklistExpanded ? `
+          <div class="check-shell">
+            ${data.items.map(item => `
+              <label class="check-row ${item.checked ? "checked" : ""}">
+                <input type="checkbox" ${item.checked ? "checked" : ""} onchange="toggleChecklist(${JSON.stringify(data.date)}, ${JSON.stringify(item.item)}, this.checked)" />
+                <span class="check-label">${item.item}</span>
+              </label>
+            `).join("")}
+          </div>
+        ` : `<div class="muted" style="margin-top:10px;">Checklist is collapsed after beginning-of-day setup.</div>`}
+      `;
+
     }
 
-    function updateChecklistBadge() {
-      if (!checklistItems.length) return;
-      const state = loadClsLocal(checklistDate);
-      const checkedCount = checklistItems.filter(i => state[i]).length;
-      $("checkMeta").innerText = `${checkedCount}/${checklistItems.length} checked`;
-    }
 
-    function toggleChecklist(item, labelEl) {
-      const state = loadClsLocal(checklistDate);
-      const newVal = !state[item];
-      state[item] = newVal;
-      saveClsLocal(checklistDate, state);
-      if (labelEl) {
-        labelEl.classList.toggle("checked", newVal);
-        const cb = labelEl.querySelector("input[type=checkbox]");
-        if (cb) cb.checked = newVal;
-      }
-      updateChecklistBadge();
-      const total = checklistItems.length;
-      const checkedCount = checklistItems.filter(i => state[i]).length;
-      if (checkedCount === total && total > 0) renderChecklist();
-      fetch("/checklist-toggle", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({date: checklistDate, item, checked: newVal})
-      }).catch(() => {});
-    }
 
-    function uncheckAllChecklist() {
-      saveClsLocal(checklistDate, {});
-      checklistItems.forEach(item => {
-        fetch("/checklist-toggle", {method:"POST",headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({date:checklistDate,item,checked:false})}).catch(()=>{});
-      });
-      renderChecklist();
-    }
-
-        async function loadDashboard(){
+    async function loadDashboard(){
 
       const res = await fetch(`/dashboard?date=${encodeURIComponent(currentDate())}`);
 
@@ -2034,223 +1927,155 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       `;
 
     }
-// ---- INVENTORY REDESIGN ----
-    let invTab = "all";
-    let invEditMode = false;
-    let invAdjTarget = null; // { id, name, quantity, unit }
+function renderInventoryModalList(){
+  $("inventoryModalList").innerHTML = `
+    ${inventoryEditMode ? `
+      <div class="service-card">
+        <h3>Add Inventory Item</h3>
+        <input id="newInvName" placeholder="Item name" />
+        <select id="newInvCategory">
+          <option value="supply">Supply</option>
+          <option value="tool">Tool</option>
+        </select>
+        <select id="newInvLocation">
+          <option value="van">Van</option>
+          <option value="truck">Truck</option>
+          <option value="warehouse">Warehouse</option>
+        </select>
+        <input id="newInvQty" type="number" step="1" value="1" placeholder="Quantity" />
+        <input id="newInvUnit" value="pieces" placeholder="Unit" />
+        <input id="newInvReorder" type="number" step="1" placeholder="Reorder point" />
+        <button class="green" onclick="addInventoryItem()">Add Item</button>
+      </div>
+    ` : ``}
 
-    function setInvTab(tab) {
-      invTab = tab;
-      ["all","van","truck","warehouse"].forEach(t => {
-        $(`invTab-${t}`)?.classList.toggle("active", t === tab);
-      });
+    ${inventory.map(item => `
+      <div class="inventory-row ${isInventoryLow(item) ? "low-stock" : ""}">
+        <strong>${item.name}</strong>
+        <div class="muted">
+          ${item.displayUnit ? `${item.displayQuantity} ${item.displayUnit}` : `${item.quantity} ${item.unit}`}
+        </div>
+        ${inventoryEditMode ? `
+          <div class="row" style="margin-top:8px;">
+           <input id="inv-${item.id || item.key}" type="number" step="0.25" value="${item.quantity}" />
+
+<select id="inv-location-${item.id || item.key}">
+  <option value="van" ${item.location === "van" ? "selected" : ""}>Van</option>
+  <option value="truck" ${item.location === "truck" ? "selected" : ""}>Truck</option>
+  <option value="warehouse" ${item.location === "warehouse" ? "selected" : ""}>Warehouse</option>
+</select>
+          </div>
+        ` : ``}
+      </div>
+    `).join("")}
+  `;
+
+  $("inventorySaveBtn").classList.toggle("hidden", !inventoryEditMode);
+  $("inventoryEditBtn").innerText = inventoryEditMode ? "Cancel Edit" : "Edit Inventory";
+}
+
+    function openInventoryModal(){
+
+      inventoryEditMode = false;
+
       renderInventoryModalList();
-    }
 
-    function filteredInventory() {
-      if (invTab === "all") return inventory;
-      return inventory.filter(i => (i.location || "van") === invTab);
-    }
-
-    function renderInventoryModalList() {
-      const items = filteredInventory();
-      const lowCount = items.filter(i => isInventoryLow(i)).length;
-
-      // Update low badges on tabs
-      ["van","truck","warehouse"].forEach(loc => {
-        const badge = $(`invLow-${loc}`);
-        if (!badge) return;
-        const cnt = inventory.filter(i => (i.location||"van")===loc && isInventoryLow(i)).length;
-        badge.textContent = cnt;
-        badge.classList.toggle("hidden", cnt === 0);
-      });
-
-      // Overall low badge
-      const totalLow = inventory.filter(i => isInventoryLow(i)).length;
-      $("invLowBadge").textContent = totalLow > 0 ? `⚠️ ${totalLow} item${totalLow>1?"s":""} low on stock` : "";
-      $("invLowBadge").style.color = totalLow > 0 ? "#dc2626" : "";
-
-      if (!items.length) {
-        $("inventoryModalList").innerHTML = `<div class="muted" style="margin-top:16px;">No items in this location.</div>`;
-        return;
-      }
-
-      $("inventoryModalList").innerHTML = items.map(item => {
-        const isLow = isInventoryLow(item);
-        const qty = item.displayQuantity ?? item.quantity;
-        const unit = item.displayUnit || item.unit || "";
-        const hasQty = item.quantity != null;
-        return `
-          <div class="inventory-row ${isLow ? "low-stock" : ""}" style="margin-bottom:10px;">
-            ${invEditMode ? `
-              <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
-                <input value="${item.name}" id="inv-name-${item.id}" style="flex:2;min-width:120px;" />
-                <select id="inv-loc-${item.id}" style="flex:1;min-width:100px;">
-                  <option value="van" ${(item.location||"van")==="van"?"selected":""}>Van</option>
-                  <option value="truck" ${item.location==="truck"?"selected":""}>Truck</option>
-                  <option value="warehouse" ${item.location==="warehouse"?"selected":""}>Warehouse</option>
-                </select>
-                <input type="number" step="0.25" value="${item.quantity??""}" id="inv-qty-${item.id}" placeholder="Qty" style="width:70px;" />
-                <input value="${item.unit||""}" id="inv-unit-${item.id}" placeholder="Unit" style="width:70px;" />
-                <input type="number" step="1" value="${item.reorderPoint??""}" id="inv-reorder-${item.id}" placeholder="Reorder at" style="width:80px;" />
-                <button class="red" style="width:auto;padding:6px 10px;" onclick="deactivateInventoryItem(${JSON.stringify(item.id)})">Remove</button>
-              </div>
-            ` : `
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-                <div>
-                  <strong style="${isLow?"color:#dc2626":""}">
-                    ${isLow ? "⚠️ " : ""}${item.name}
-                  </strong>
-                  <div class="muted" style="font-size:13px;">${item.location||"van"} ${item.category ? "· "+item.category : ""}</div>
-                </div>
-                <div style="display:flex;align-items:center;gap:8px;">
-                  ${hasQty ? `
-                    <span style="font-weight:700;font-size:18px;${isLow?"color:#dc2626":""}">${qty}</span>
-                    <span class="muted">${unit}</span>
-                    <button class="secondary" style="width:auto;padding:6px 14px;font-size:20px;" onclick="openInvAdj(${JSON.stringify({id:item.id,name:item.name,quantity:item.quantity,unit:item.unit})})">±</button>
-                  ` : `<span class="muted">not tracked</span>`}
-                </div>
-              </div>
-            `}
-          </div>`;
-      }).join("");
-    }
-
-    function openInventoryModal() {
-      invEditMode = false;
-      invTab = "all";
-      ["all","van","truck","warehouse"].forEach(t => {
-        $(`invTab-${t}`)?.classList.toggle("active", t === "all");
-      });
-      $("invAddForm")?.classList.add("hidden");
-      $("invAddBtn")?.classList.add("hidden");
-      renderInventoryModalList();
       $("inventoryModal").classList.remove("hidden");
+
     }
 
-    function closeInventoryModal() {
+
+
+    function closeInventoryModal(){
+
       $("inventoryModal").classList.add("hidden");
+
     }
 
-    function toggleInventoryEdit() {
-      invEditMode = !invEditMode;
-      $("inventoryEditBtn").innerText = invEditMode ? "Done Editing" : "Edit";
-      $("invAddBtn")?.classList.toggle("hidden", !invEditMode);
-      if (!invEditMode) saveAllInventoryEdits();
-      else renderInventoryModalList();
+
+
+    function toggleInventoryEdit(){
+
+      inventoryEditMode = !inventoryEditMode;
+
+      renderInventoryModalList();
+
     }
 
-    async function saveAllInventoryEdits() {
-      const saves = inventory.map(async item => {
-        const nameEl = $(`inv-name-${item.id}`);
-        if (!nameEl) return; // not visible (different tab)
-        const qtyEl = $(`inv-qty-${item.id}`);
-        const unitEl = $(`inv-unit-${item.id}`);
-        const reorderEl = $(`inv-reorder-${item.id}`);
-        const locEl = $(`inv-loc-${item.id}`);
-        await fetch(`/inventory/${item.id}`, {
-          method: "PUT",
-          headers: {"Content-Type":"application/json"},
+
+
+    async function saveInventoryEdits(){
+async function addInventoryItem(){
+  const name = $("newInvName").value.trim();
+
+  if (!name) return alert("Enter item name");
+
+  await fetch("/inventory/add", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json" },
+   body: JSON.stringify({
+  name: item.name,
+  quantity,
+  location: $(`inv-location-${itemId}`)?.value || item.location || "van",
+  category: item.category || "supply",
+  unit: item.unit,
+  reorderPoint: item.reorderPoint,
+  active: item.active !== false
+})
+  });
+
+  await loadInventory();
+  renderLowStockList();
+
+  alert("Inventory item added");
+}
+      for (const item of inventory) {
+
+        const itemId = item.id || item.key;
+
+        const el = $(`inv-${itemId}`);
+
+        if (!el) continue;
+
+        const quantity = Number(el.value || 0);
+
+        await fetch(`/inventory/${itemId}`, {
+
+          method:"PUT",
+
+          headers:{ "Content-Type":"application/json" },
+
           body: JSON.stringify({
-            name: nameEl.value.trim() || item.name,
-            quantity: qtyEl?.value === "" ? null : Number(qtyEl?.value),
-            unit: unitEl?.value.trim() || item.unit,
-            reorderPoint: reorderEl?.value === "" ? null : Number(reorderEl?.value),
-            location: locEl?.value || item.location || "van",
-            category: item.category || "supply",
-            active: true
+
+            name: item.name,
+
+            quantity,
+
+            unit: item.unit,
+
+            reorderPoint: item.reorderPoint,
+
+            active: item.active !== false
+
           })
+
         });
-      });
-      await Promise.all(saves);
-      await loadInventory();
-      renderInventoryModalList();
-    }
 
-    function showAddInventoryForm() {
-      $("invAddForm")?.classList.remove("hidden");
-    }
-    function hideAddInventoryForm() {
-      $("invAddForm")?.classList.add("hidden");
-    }
-
-    async function addInventoryItem() {
-      const name = $("newInvName")?.value.trim();
-      if (!name) return alert("Enter item name");
-      const qtyVal = $("newInvQty")?.value;
-      await fetch("/inventory/add", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          name,
-          category: $("newInvCategory")?.value || "supply",
-          location: $("newInvLocation")?.value || "van",
-          quantity: qtyVal === "" ? null : Number(qtyVal),
-          unit: $("newInvUnit")?.value || "pieces",
-          reorderPoint: $("newInvReorder")?.value === "" ? null : Number($("newInvReorder")?.value)
-        })
-      });
-      $("newInvName").value = "";
-      $("newInvQty").value = "";
-      $("newInvReorder").value = "";
-      hideAddInventoryForm();
-      await loadInventory();
-      renderInventoryModalList();
-    }
-
-    async function deactivateInventoryItem(id) {
-      if (!confirm("Remove this item from inventory?")) return;
-      await fetch(`/inventory/${id}`, {
-        method: "PUT",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ active: false })
-      });
-      await loadInventory();
-      renderInventoryModalList();
-    }
-
-    // ---- Quick Adjust Modal ----
-    function openInvAdj(item) {
-      invAdjTarget = item;
-      $("invAdjTitle").textContent = item.name;
-      $("invAdjCurrent").textContent = `Current stock: ${item.quantity} ${item.unit||""}`;
-      $("invAdjQty").value = "1";
-      $("invAdjustModal").classList.remove("hidden");
-    }
-
-    function closeInvAdjModal() {
-      $("invAdjustModal").classList.add("hidden");
-      invAdjTarget = null;
-    }
-
-    function invAdjStep(dir) {
-      const val = Math.max(1, Number($("invAdjQty").value || 1) + dir);
-      $("invAdjQty").value = val;
-    }
-
-    async function commitInvAdj(direction) {
-      if (!invAdjTarget) return;
-      const delta = Number($("invAdjQty").value || 1) * direction;
-      const res = await fetch("/inventory/adjust", {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ id: invAdjTarget.id, delta })
-      });
-      if (res.ok) {
-        closeInvAdjModal();
-        await loadInventory();
-        renderInventoryModalList();
-      } else {
-        alert("Adjust failed. Try again.");
       }
+
+      inventoryEditMode = false;
+
+      await loadInventory();
+
+      renderLowStockList();
+
+      alert("Inventory updated");
+
     }
 
-    // ---- Legacy aliases (keep for compatibility) ----
-    function renderLowStockList() { renderInventoryModalList(); }
-    function saveInventoryEdits() { saveAllInventoryEdits(); }
-    // inventoryEditMode declared earlier in page, no redeclaration needed
 
-        async function loadEstimates(){
+
+    async function loadEstimates(){
 
       const res = await fetch("/estimates");
 
@@ -4029,7 +3854,37 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
 
     function toggleChecklistPanel(){
-    // checklist toggle handled by toggleChecklist() above
+      checklistExpanded = !checklistExpanded;
+      localStorage.setItem("swyftChecklistExpanded", checklistExpanded ? "true" : "false");
+      loadChecklist();
+    }
+
+   async function toggleChecklist(date, item, checked) {
+      lastChecklistTouch = Date.now();  // block auto-refresh from overwriting for 10s
+      const el = event?.target?.closest(".check-row");
+      if (el) el.classList.toggle("checked", checked);
+      checklistSaving = true;
+      try {
+        const res = await fetch("/daily-checklist/toggle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ date, item, checked })
+        });
+        if (!res.ok) throw new Error("Checklist save failed");
+        // Update the count badge locally without re-fetching
+        const allRows = document.querySelectorAll("#dailyChecklist .check-row");
+        const checkedCount = Array.from(allRows).filter(r => r.classList.contains("checked")).length;
+        $("checkMeta").innerText = `${checkedCount}/${allRows.length} checked`;
+        // Hold the save lock for 8 seconds after success
+        setTimeout(() => { checklistSaving = false; }, 8000);
+      } catch (err) {
+        if (el) el.classList.toggle("checked", !checked);
+        const input = el?.querySelector('input[type="checkbox"]');
+        if (input) input.checked = !checked;
+        checklistSaving = false;
+        alert("Checklist save failed. Please try again.");
+      }
+    }
 
 
 
@@ -4654,9 +4509,7 @@ async function saveScheduleCrew() {
     }
 
 
-  
-  
-  }</script>
+  </script>
 
 </body>
 
