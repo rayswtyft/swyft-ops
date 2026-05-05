@@ -1909,8 +1909,13 @@ function renderInventoryModalList(){
         </div>
         ${inventoryEditMode ? `
           <div class="row" style="margin-top:8px;">
-            <input id="inv-${item.id || item.key}" type="number" step="0.25" value="${item.quantity}" />
-            <div></div>
+           <input id="inv-${item.id || item.key}" type="number" step="0.25" value="${item.quantity}" />
+
+<select id="inv-location-${item.id || item.key}">
+  <option value="van" ${item.location === "van" ? "selected" : ""}>Van</option>
+  <option value="truck" ${item.location === "truck" ? "selected" : ""}>Truck</option>
+  <option value="warehouse" ${item.location === "warehouse" ? "selected" : ""}>Warehouse</option>
+</select>
           </div>
         ` : ``}
       </div>
@@ -1960,15 +1965,15 @@ async function addInventoryItem(){
   await fetch("/inventory/add", {
     method:"POST",
     headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({
-      name,
-      key: name.toLowerCase().replaceAll(" ", "_"),
-      category: $("newInvCategory").value,
-      location: $("newInvLocation").value,
-      quantity: Number($("newInvQty").value || 0),
-      unit: $("newInvUnit").value || "pieces",
-      reorderPoint: $("newInvReorder").value || null
-    })
+   body: JSON.stringify({
+  name: item.name,
+  quantity,
+  location: $(`inv-location-${itemId}`)?.value || item.location || "van",
+  category: item.category || "supply",
+  unit: item.unit,
+  reorderPoint: item.reorderPoint,
+  active: item.active !== false
+})
   });
 
   await loadInventory();
