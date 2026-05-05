@@ -1893,6 +1893,8 @@ app.put("/inventory/:id", (req, res) => {
   if (!item) return res.status(404).json({ error: "Inventory item not found" });
 
   item.name = cleanString(req.body.name) || item.name;
+  item.category = cleanString(req.body.category) || item.category || "supply";
+item.location = cleanString(req.body.location) || item.location || "van";
   item.quantity = req.body.quantity === null || req.body.quantity === "" ? null : Number(req.body.quantity);
   item.unit = cleanString(req.body.unit) || item.unit;
   item.reorderPoint = req.body.reorderPoint === null || req.body.reorderPoint === "" ? null : Number(req.body.reorderPoint);
