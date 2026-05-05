@@ -1289,6 +1289,7 @@
 
     let dailySetup = { date: "", crewSize: 1, lunchMinutes: 0 };
     let checklistExpanded = localStorage.getItem("swyftChecklistExpanded") !== "false";
+    let checklistSaving = false;
 
     let selectedJobId = null;
 
@@ -1749,7 +1750,7 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
 
-    async function loadChecklist(){
+    async function loadChecklist(force){
 
       const date = currentDate();
 
@@ -1773,7 +1774,8 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
       }
 
-
+      // Don't re-render if user is actively interacting with checklist (prevents checkbox flicker)
+      if (!force && (checklistSaving || (document.activeElement && $("dailyChecklist").contains(document.activeElement)))) return;
 
       $("dailyChecklist").innerHTML = `
         <button class="secondary" onclick="toggleChecklistPanel()">${checklistExpanded ? "Hide Checklist" : "View Checklist"}</button>
@@ -3359,6 +3361,11 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
     async function jobAction(url){
       try {
+        // Enforce clock-in before any job action
+        if (!currentEmployee) {
+          alert("You must be clocked in before performing job actions.");
+          return;
+        }
         const geo = await getBrowserGeo();
         const res = await fetch(url, {
           method:"POST",
@@ -3387,9 +3394,10 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       if (window.google?.maps?.places) return Promise.resolve(true);
       if (googlePlacesScriptLoading) return googlePlacesScriptLoading;
       googlePlacesScriptLoading = new Promise(resolve => {
-        // Remove any old failed script tags first
-        document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
-        window.google = undefined;
+        // Only remove old scripts if google isn't already loaded
+        if (!window.google?.maps) {
+          document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
+        }
         const callbackName = "__gmpsCb_" + Date.now();
         window[callbackName] = function() {
           // Callback fires when Maps JS is fully ready
@@ -3817,6 +3825,7 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
    async function toggleChecklist(date, item, checked) {
       const el = event?.target?.closest(".check-row");
       if (el) el.classList.toggle("checked", checked);
+      checklistSaving = true;
       try {
         const res = await fetch("/daily-checklist/toggle", {
           method: "POST",
@@ -3829,6 +3838,8 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
         const input = el?.querySelector('input[type="checkbox"]');
         if (input) input.checked = !checked;
         alert("Checklist save failed. Please try again.");
+      } finally {
+        checklistSaving = false;
       }
     }
 
