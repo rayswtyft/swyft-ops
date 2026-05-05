@@ -2248,8 +2248,7 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
     // ---- Legacy aliases (keep for compatibility) ----
     function renderLowStockList() { renderInventoryModalList(); }
     function saveInventoryEdits() { saveAllInventoryEdits(); }
-    let inventoryEditMode = false; // legacy alias
-    function toggleInventoryEdit_old() { toggleInventoryEdit(); }
+    // inventoryEditMode declared earlier in page, no redeclaration needed
 
         async function loadEstimates(){
 
@@ -4655,7 +4654,9 @@ async function saveScheduleCrew() {
     }
 
 
-  </script>
+  
+  
+  }</script>
 
 </body>
 
