@@ -337,8 +337,7 @@ await query(`
 
 async function loadDbFromPostgres() {
   
-category: i.category || "supply",
-location: i.location || "van",
+
   const db = defaultState();
   const contractorsRes = await query(`SELECT * FROM contractors ORDER BY id`);
   const contractorAddressesRes = await query(`SELECT * FROM contractor_addresses ORDER BY id`);
@@ -355,17 +354,20 @@ location: i.location || "van",
   }));
 
   const inventoryRes = await query(`SELECT * FROM inventory ORDER BY name`);
-  db.inventory = inventoryRes.rows.map(i => ({
-    id: i.id,
-    key: i.item_key,
-    name: i.name,
-    quantity: i.quantity === null ? null : Number(i.quantity),
-    unit: i.unit,
-    reorderPoint: i.reorder_point === null ? null : Number(i.reorder_point),
-    active: i.active !== false,
-    display: i.display || null
-  }));
 
+const inventoryRes = await query(`SELECT * FROM inventory ORDER BY name`);
+db.inventory = inventoryRes.rows.map(i => ({
+  id: i.id,
+  key: i.item_key,
+  name: i.name,
+  quantity: i.quantity === null ? null : Number(i.quantity),
+  unit: i.unit,
+  category: i.category || "supply",
+  location: i.location || "van",
+  reorderPoint: i.reorder_point === null ? null : Number(i.reorder_point),
+  active: i.active !== false,
+  display: i.display || null
+}));
   const jobsRes = await query(`SELECT * FROM jobs ORDER BY service_date, sort_order, id`);
   const servicesRes = await query(`SELECT * FROM job_services ORDER BY service_index, id`);
   const photosRes = await query(`SELECT * FROM job_photos ORDER BY created_at, id`);
