@@ -3152,9 +3152,9 @@ $("manualAddress").value = "";
 
         : jobs.map(job => `
 
-          <div class="job-item ${selectedJobId===job.id?"active":""}" onclick="selectJob(${job.id})" draggable="${currentMode==='scheduling'}"
+          <div class="job-item ${selectedJobId===job.id?"active":""}" onclick="selectJob('${job.id}')" draggable="${currentMode==='scheduling'}"
 
-               ondragstart="dragStart(event, ${job.id})" ondragover="dragOver(event)" ondrop="dragDrop(event, ${job.id})">
+               ondragstart="dragStart(event, '${job.id}')" ondragover="dragOver(event)" ondrop="dragDrop(event, '${job.id}')">
 
             <strong>${job.contractor?.companyName || job.contractor?.contactName || "No contractor"}</strong>
 
@@ -3283,12 +3283,12 @@ $("manualAddress").value = "";
           </div>
           <div class="quick-actions" style="margin-top:10px;">
             <button class="secondary" onclick="jobAction('/jobs/${job.id}/arrived')">Arrived</button>
-            <button class="orange" onclick="leaveJobOpen(${job.id})">Leave Open</button>
+            <button class="orange" onclick="leaveJobOpen('${job.id}')">Leave Open</button>
           </div>
         ` : `
           <div class="quick-actions" style="margin-top:12px;">
             <button class="secondary" onclick="openDirections(${JSON.stringify(job.serviceAddress || "")})">Directions</button>
-            <button class="orange" onclick="continueJobTomorrow(${job.id})">Continue Tomorrow</button>
+            <button class="orange" onclick="continueJobTomorrow('${job.id}')">Continue Tomorrow</button>
           </div>
         `}
 
@@ -3296,7 +3296,7 @@ $("manualAddress").value = "";
 
           <div class="quick-actions" style="margin-top:12px;">
 
-            <button onclick="toggleEditJob(${job.id})">${editing ? "Close Edit" : "Edit Job"}</button>
+            <button onclick="toggleEditJob('${job.id}')">${editing ? "Close Edit" : "Edit Job"}</button>
 
             <button class="secondary" onclick="window.open('/invoice/${job.id}', '_blank')">View Invoice</button>
 
@@ -3304,9 +3304,9 @@ $("manualAddress").value = "";
 
           <div class="quick-actions" style="margin-top:10px;">
 
-            <button class="secondary" onclick="archiveJob(${job.id})">Archive Job</button>
+            <button class="secondary" onclick="archiveJob('${job.id}')">Archive Job</button>
 
-            <button class="red" onclick="deleteJob(${job.id})">Delete Job</button>
+            <button class="red" onclick="deleteJob('${job.id}')">Delete Job</button>
 
           </div>
 
@@ -3410,9 +3410,9 @@ $("manualAddress").value = "";
 
             <div class="row">
 
-              <button class="green" onclick="saveJobEdits(${job.id})">Save Job Changes</button>
+              <button class="green" onclick="saveJobEdits('${job.id}')">Save Job Changes</button>
 
-              <button class="secondary" onclick="toggleEditJob(${job.id})">Cancel</button>
+              <button class="secondary" onclick="toggleEditJob('${job.id}')">Cancel</button>
 
             </div>
 
@@ -3511,13 +3511,13 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
             <div class="van-picture-buttons">
 
-              <button class="blue" onclick="captureVanPhoto(${job.id}, 'before')">Take Before Picture</button>
+              <button class="blue" onclick="captureVanPhoto('${job.id}', 'before')">Take Before Picture</button>
 
-              <button class="secondary" onclick="uploadVanPhoto(${job.id}, 'before')">Upload Before Picture</button>
+              <button class="secondary" onclick="uploadVanPhoto('${job.id}', 'before')">Upload Before Picture</button>
 
-              <button class="green" onclick="captureVanPhoto(${job.id}, 'after')">Take After Picture</button>
+              <button class="green" onclick="captureVanPhoto('${job.id}', 'after')">Take After Picture</button>
 
-              <button class="secondary" onclick="uploadVanPhoto(${job.id}, 'after')">Upload After Picture</button>
+              <button class="secondary" onclick="uploadVanPhoto('${job.id}', 'after')">Upload After Picture</button>
 
             </div>
 
@@ -3541,7 +3541,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
             <input id="photoCaption-${job.id}" placeholder="Photo caption (optional)" />
 
-            <button class="green" onclick="uploadPhoto(${job.id})">Upload Photo</button>
+            <button class="green" onclick="uploadPhoto('${job.id}')">Upload Photo</button>
 
           `}
 
@@ -3563,7 +3563,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
                     <div class="muted">${p.caption || ""}</div>
 
-                    ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto(${job.id}, '${p.id}')">Delete</button>` : ""}
+                    ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto('${job.id}', '${p.id}')">Delete</button>` : ""}
 
                   </div>
 
@@ -3593,7 +3593,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
                     <div class="muted">${p.caption || ""}</div>
 
-                    ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto(${job.id}, '${p.id}')">Delete</button>` : ""}
+                    ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto('${job.id}', '${p.id}')">Delete</button>` : ""}
 
                   </div>
 
