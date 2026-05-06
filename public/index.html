@@ -965,10 +965,16 @@
 
         <input id="paymentTerms" placeholder="Payment terms" />
 
-        <textarea id="newServiceAddresses" placeholder="Service addresses, one per line"></textarea>
+        <div style="margin-top:8px;">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">Service Addresses</label>
+          <div id="newAddressChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:4px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input id="newAddressInput" placeholder="Type address…" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewContractorAddress();}" />
+            <button class="secondary" style="white-space:nowrap;padding:6px 12px;" onclick="addNewContractorAddress()">+ Add</button>
+          </div>
+        </div>
 
-        <div class="row">
-
+        <div class="row" style="margin-top:12px;">
           <button class="green" onclick="createContractor()">Save Contractor</button>
 
           <button class="secondary" onclick="toggleNewContractorPanel()">Cancel</button>
@@ -2704,6 +2710,9 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
 
 
+      // seed edit address list
+      _editContractorAddresses = [...(c.serviceAddresses || [])];
+
       $("contractorEditorPanel").innerHTML = `
 
         <input id="editCompanyName" value="${c.companyName || ""}" placeholder="Company name" />
@@ -2718,19 +2727,81 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
         <input id="editPaymentTerms" value="${c.paymentTerms || ""}" placeholder="Payment terms" />
 
-        <textarea id="editServiceAddresses" placeholder="Service addresses, one per line">${(c.serviceAddresses || []).join("\n")}</textarea>
+        <div style="margin-top:8px;">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">Service Addresses</label>
+          <div id="editAddressChips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;min-height:4px;"></div>
+          <div style="display:flex;gap:6px;">
+            <input id="editAddressInput" placeholder="Type address…" style="flex:1;" onkeydown="if(event.key==='Enter'){event.preventDefault();addEditContractorAddress();}" />
+            <button class="secondary" style="white-space:nowrap;padding:6px 12px;" onclick="addEditContractorAddress()">+ Add</button>
+          </div>
+        </div>
 
-        <button class="green" onclick="saveContractorEditor(${c.id})">Save Contractor</button>
+        <button class="green" style="margin-top:12px;" onclick="saveContractorEditor(${c.id})">Save Contractor</button>
 
       `;
+
+      renderEditAddressChips();
+      setTimeout(() => initEditAddressAutocomplete(), 300);
 
     }
 
 
 
+    // ── Edit contractor address chips ────────────────────────────
+    let _editContractorAddresses = [];
+    let _editAddressAutocomplete = null;
+
+    function addEditContractorAddress() {
+      const input = $("editAddressInput");
+      if (!input) return;
+      const val = input.value.trim();
+      if (!val) return;
+      if (!_editContractorAddresses.includes(val)) {
+        _editContractorAddresses.push(val);
+        renderEditAddressChips();
+      }
+      input.value = "";
+      setTimeout(() => initEditAddressAutocomplete(), 50);
+    }
+
+    function removeEditContractorAddress(i) {
+      _editContractorAddresses.splice(i, 1);
+      renderEditAddressChips();
+    }
+
+    function renderEditAddressChips() {
+      const container = $("editAddressChips");
+      if (!container) return;
+      container.innerHTML = _editContractorAddresses.map((a, i) =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;background:#e8f0fe;border:1px solid #c5d5f7;border-radius:8px;padding:4px 8px;font-size:12px;">
+          📍 ${a}
+          <button onclick="removeEditContractorAddress(${i})" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:13px;line-height:1;padding:0;margin-left:2px;">✕</button>
+        </span>`
+      ).join("");
+    }
+
+    function initEditAddressAutocomplete() {
+      if (!window.google?.maps?.places) return;
+      const input = $("editAddressInput");
+      if (!input) return;
+      if (_editAddressAutocomplete) {
+        window.google.maps.event.clearInstanceListeners(_editAddressAutocomplete);
+      }
+      _editAddressAutocomplete = new window.google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: "us" }
+      });
+      _editAddressAutocomplete.addListener("place_changed", () => {
+        const place = _editAddressAutocomplete.getPlace();
+        if (place?.formatted_address) {
+          input.value = place.formatted_address;
+        }
+      });
+    }
+
     async function saveContractorEditor(id){
 
-      await fetch(`/contractors/${id}`, {
+      const res = await fetch(`/contractors/${id}`, {
 
         method:"PUT",
 
@@ -2750,11 +2821,17 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
           paymentTerms: $("editPaymentTerms").value,
 
-          serviceAddresses: $("editServiceAddresses").value.split("\n").map(x => x.trim()).filter(Boolean)
+          serviceAddresses: [..._editContractorAddresses]
 
         })
 
       });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Error saving: " + (err.error || res.status));
+        return;
+      }
 
       await loadContractors();
 
@@ -2815,11 +2892,70 @@ function applySavedAddress(){
 
     function toggleNewContractorPanel(){
 
-      $("newContractorPanel").classList.toggle("hidden");
+      const panel = $("newContractorPanel");
+      panel.classList.toggle("hidden");
+      if (!panel.classList.contains("hidden")) {
+        _newContractorAddresses = [];
+        renderNewAddressChips();
+        setTimeout(() => initNewAddressAutocomplete(), 300);
+      }
 
     }
 
 
+
+    // ── New contractor address chips ─────────────────────────────
+    let _newContractorAddresses = [];
+    let _newAddressAutocomplete = null;
+
+    function addNewContractorAddress() {
+      const input = $("newAddressInput");
+      if (!input) return;
+      const val = input.value.trim();
+      if (!val) return;
+      if (!_newContractorAddresses.includes(val)) {
+        _newContractorAddresses.push(val);
+        renderNewAddressChips();
+      }
+      input.value = "";
+      // re-init autocomplete
+      setTimeout(() => initNewAddressAutocomplete(), 50);
+    }
+
+    function removeNewContractorAddress(i) {
+      _newContractorAddresses.splice(i, 1);
+      renderNewAddressChips();
+    }
+
+    function renderNewAddressChips() {
+      const container = $("newAddressChips");
+      if (!container) return;
+      container.innerHTML = _newContractorAddresses.map((a, i) =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;background:#e8f0fe;border:1px solid #c5d5f7;border-radius:8px;padding:4px 8px;font-size:12px;">
+          📍 ${a}
+          <button onclick="removeNewContractorAddress(${i})" style="background:none;border:none;cursor:pointer;color:#e53e3e;font-size:13px;line-height:1;padding:0;margin-left:2px;">✕</button>
+        </span>`
+      ).join("");
+    }
+
+    function initNewAddressAutocomplete() {
+      if (!window.google?.maps?.places) return;
+      const input = $("newAddressInput");
+      if (!input) return;
+      if (_newAddressAutocomplete) {
+        window.google.maps.event.clearInstanceListeners(_newAddressAutocomplete);
+      }
+      _newAddressAutocomplete = new window.google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: "us" }
+      });
+      _newAddressAutocomplete.addListener("place_changed", () => {
+        const place = _newAddressAutocomplete.getPlace();
+        if (place?.formatted_address) {
+          input.value = place.formatted_address;
+        }
+      });
+    }
 
     async function createContractor(){
 
@@ -2837,7 +2973,7 @@ function applySavedAddress(){
 
         paymentTerms: $("paymentTerms").value,
 
-        serviceAddresses: $("newServiceAddresses").value.split("\n").map(x => x.trim()).filter(Boolean)
+        serviceAddresses: [..._newContractorAddresses]
 
       };
 
@@ -2853,7 +2989,7 @@ function applySavedAddress(){
 
 
 
-      await fetch("/contractors", {
+      const res = await fetch("/contractors", {
 
         method:"POST",
 
@@ -2862,6 +2998,12 @@ function applySavedAddress(){
         body: JSON.stringify(payload)
 
       });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert("Error saving contractor: " + (err.error || res.status));
+        return;
+      }
 
 
 
@@ -2877,7 +3019,9 @@ function applySavedAddress(){
 
       $("paymentTerms").value = "";
 
-      $("newServiceAddresses").value = "";
+      _newContractorAddresses = [];
+
+      renderNewAddressChips();
 
       $("newContractorPanel").classList.add("hidden");
 
