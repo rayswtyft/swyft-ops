@@ -5827,6 +5827,7 @@ async function saveScheduleCrew() {
         });
       }
       document.getElementById("weeklyPayrollBody").innerHTML = html;
+      setTimeout(resolveGeoPending, 50);
     }
 
     function renderWeeklyActivity() {
@@ -5863,27 +5864,41 @@ async function saveScheduleCrew() {
         });
       }
       document.getElementById("weeklyActivityBody").innerHTML = html;
+      setTimeout(resolveGeoPending, 50);
     }
 
-    function exportWeeklyPayrollCSV() {
+    async function exportWeeklyPayrollCSV() {
       const data = weeklyReportData.payroll;
       if (!data || !data.employees) return alert("Load a week first");
-      const rows = [["Employee","Date","Clock In","Clock Out","Hours","Clock-In Lat","Clock-In Lng","Clock-Out Lat","Clock-Out Lng"]];
+
+      // Pre-resolve all geo addresses before building CSV
+      const geoPromises = [];
       data.employees.forEach(emp => {
         emp.entries.forEach(e => {
+          if (e.clockInLocation?.lat && e.clockInLocation?.lng)
+            geoPromises.push(reverseGeocodeAddress(e.clockInLocation.lat, e.clockInLocation.lng));
+          if (e.clockOutLocation?.lat && e.clockOutLocation?.lng)
+            geoPromises.push(reverseGeocodeAddress(e.clockOutLocation.lat, e.clockOutLocation.lng));
+        });
+      });
+      await Promise.all(geoPromises);
+
+      const rows = [["Employee","Date","Clock In","Clock Out","Hours","Clock-In Address","Clock-Out Address"]];
+      data.employees.forEach(emp => {
+        emp.entries.forEach(e => {
+          const inKey = e.clockInLocation?.lat ? (e.clockInLocation.lat.toFixed(5) + "," + e.clockInLocation.lng.toFixed(5)) : null;
+          const outKey = e.clockOutLocation?.lat ? (e.clockOutLocation.lat.toFixed(5) + "," + e.clockOutLocation.lng.toFixed(5)) : null;
           rows.push([
             emp.name,
             e.date,
             e.clockIn ? new Date(e.clockIn).toLocaleString() : "",
             e.clockOut ? new Date(e.clockOut).toLocaleString() : "",
             e.hours ?? "",
-            e.clockInLocation?.lat ?? "",
-            e.clockInLocation?.lng ?? "",
-            e.clockOutLocation?.lat ?? "",
-            e.clockOutLocation?.lng ?? ""
+            (inKey && _geocodeCache[inKey]) ? _geocodeCache[inKey] : (e.clockInLocation?.lat ? e.clockInLocation.lat.toFixed(5) + ", " + e.clockInLocation.lng.toFixed(5) : ""),
+            (outKey && _geocodeCache[outKey]) ? _geocodeCache[outKey] : (e.clockOutLocation?.lat ? e.clockOutLocation.lat.toFixed(5) + ", " + e.clockOutLocation.lng.toFixed(5) : "")
           ]);
         });
-        rows.push([emp.name + " TOTAL", "", "", "", emp.totalHours, "", "", "", ""]);
+        rows.push([emp.name + " TOTAL", "", "", "", emp.totalHours, "", ""]);
         rows.push([]);
       });
       const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
