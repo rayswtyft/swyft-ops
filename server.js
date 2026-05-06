@@ -25,6 +25,120 @@ const DB_FILE = path.join(__dirname, "db.json");
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 const EXPORTS_DIR = path.join(__dirname, "exports");
 
+// ── Google Drive Integration ──────────────────────────────────────────────
+const DRIVE_JOBS_FOLDER_ID = "1oVCkVZqZntGPp_1tx15JTBWYT9hC8JOX";
+
+async function getDriveToken() {
+  try {
+    const res = await query(`SELECT value FROM settings WHERE key='google_drive_token'`);
+    if (res.rows.length) return res.rows[0].value?.access_token || null;
+  } catch(e) {}
+  return null;
+}
+
+async function saveDriveToken(tokenData) {
+  await query(
+    `INSERT INTO settings (key, value) VALUES ('google_drive_token', $1)
+     ON CONFLICT (key) DO UPDATE SET value=$1`,
+    [JSON.stringify(tokenData)]
+  );
+}
+
+async function refreshDriveToken() {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  const refreshToken = process.env.GOOGLE_DRIVE_REFRESH_TOKEN;
+  if (!clientId || !clientSecret || !refreshToken) return null;
+  try {
+    const resp = await axios.post("https://oauth2.googleapis.com/token", qs.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: "refresh_token"
+    }), { headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+    const token = resp.data.access_token;
+    await saveDriveToken({ access_token: token, fetched_at: Date.now() });
+    return token;
+  } catch(e) {
+    console.error("Drive token refresh failed:", e.message);
+    return null;
+  }
+}
+
+async function getValidDriveToken() {
+  // Try stored token first (valid ~1hr)
+  try {
+    const res = await query(`SELECT value FROM settings WHERE key='google_drive_token'`);
+    if (res.rows.length) {
+      const d = res.rows[0].value;
+      const age = Date.now() - (d.fetched_at || 0);
+      if (age < 55 * 60 * 1000 && d.access_token) return d.access_token;
+    }
+  } catch(e) {}
+  return refreshDriveToken();
+}
+
+async function driveCreateFolder(name, parentId, token) {
+  const resp = await axios.post("https://www.googleapis.com/drive/v3/files",
+    { name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] },
+    { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+  );
+  return resp.data.id;
+}
+
+async function driveSetPublic(fileId, token) {
+  try {
+    await axios.post(`https://www.googleapis.com/drive/v3/files/${fileId}/permissions`,
+      { role: "reader", type: "anyone" },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+  } catch(e) { /* non-fatal */ }
+}
+
+async function driveUploadFile(buffer, filename, mimeType, parentId, token) {
+  // Multipart upload
+  const meta = JSON.stringify({ name: filename, parents: [parentId] });
+  const boundary = "swyft_boundary_" + Date.now();
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`),
+    Buffer.from(meta),
+    Buffer.from(`\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`),
+    buffer,
+    Buffer.from(`\r\n--${boundary}--`)
+  ]);
+  const resp = await axios.post(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,webViewLink,webContentLink",
+    body,
+    { headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": `multipart/related; boundary=${boundary}`,
+      "Content-Length": body.length
+    }}
+  );
+  return resp.data; // { id, name, webViewLink, webContentLink }
+}
+
+async function getOrCreateJobDriveFolder(job, token) {
+  // Check if folder already stored
+  if (job.driveFolderId) return job.driveFolderId;
+  // Create folder: "YYYY-MM-DD - Contractor - Address"
+  const label = [
+    job.serviceDate || "unknown-date",
+    (job.contractorName || "Unknown").replace(/[/\\:*?"<>|]/g, "-").substring(0, 40),
+    (job.serviceAddress || "No Address").replace(/[/\\:*?"<>|]/g, "-").substring(0, 60)
+  ].join(" - ");
+  const folderId = await driveCreateFolder(label, DRIVE_JOBS_FOLDER_ID, token);
+  await driveSetPublic(folderId, token);
+  // Create subfolders
+  await Promise.all(["Before", "After", "Other"].map(sub => driveCreateFolder(sub, folderId, token)));
+  // Save folder ID to job
+  job.driveFolderId = folderId;
+  await query(`UPDATE jobs SET drive_folder_id=$1 WHERE id=$2`, [folderId, String(job.id)]).catch(()=>{});
+  return folderId;
+}
+// ── End Google Drive ───────────────────────────────────────────────────────
+
+
 let memoryDb = null;
 
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true });
@@ -337,6 +451,7 @@ async function migrateDatabase() {
   try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS dropoff_address TEXT`); } catch(e) {}
   await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb, trench_data JSONB DEFAULT '[]'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS job_photos (id TEXT PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, url TEXT, tag TEXT, caption TEXT, created_at TEXT)`);
+  try { await query(`ALTER TABLE job_photos ADD COLUMN IF NOT EXISTS drive_file_id TEXT`); } catch(e) {}
   await query(`CREATE TABLE IF NOT EXISTS estimates (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, status TEXT DEFAULT 'open', created_at TEXT, converted_job_id TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb, trench_data JSONB DEFAULT '[]'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, item_key TEXT UNIQUE, name TEXT, quantity NUMERIC, unit TEXT, reorder_point NUMERIC, active BOOLEAN DEFAULT true, display JSONB)`);
@@ -360,6 +475,7 @@ await query(`
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS assigned_employee_ids JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS pin TEXT`);
+  await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS drive_folder_id TEXT`);
   await query(`ALTER TABLE job_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
   await query(`ALTER TABLE estimate_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
   await query(`CREATE TABLE IF NOT EXISTS route_events (id TEXT PRIMARY KEY, action TEXT, job_id TEXT, service_index INTEGER, employee_id TEXT, employee_name TEXT, service_address TEXT, formatted_address TEXT, latitude NUMERIC, longitude NUMERIC, accuracy NUMERIC, event_date TEXT, created_at TEXT)`);
@@ -444,7 +560,8 @@ db.inventory = inventoryRes.rows.map(i => {
     fromEstimateId: j.from_estimate_id ? numericIfPossible(j.from_estimate_id) : undefined,
     openStatus: j.open_status || "single_day",
     services: servicesRes.rows.filter(s => String(s.job_id) === String(j.id)).map(serviceRowToObject),
-    photos: photosRes.rows.filter(p => String(p.job_id) === String(j.id)).map(p => ({ id: p.id, url: p.url, tag: p.tag, caption: p.caption || "", createdAt: p.created_at || null }))
+    photos: photosRes.rows.filter(p => String(p.job_id) === String(j.id)).map(p => ({ id: p.id, url: p.url, tag: p.tag, caption: p.caption || "", createdAt: p.created_at || null })),
+    driveFolderId: j.drive_folder_id || null
   }));
 
   const estimatesRes = await query(`SELECT * FROM estimates ORDER BY id`);
@@ -2508,21 +2625,53 @@ app.post("/jobs/:id/photos", upload.single("photo"), async (req, res) => {
   if (!job) return res.status(404).json({ error: "Job not found" });
   if (!req.file) return res.status(400).json({ error: "No photo uploaded" });
 
-  job.photos ||= [];
+  const tag = cleanString(req.body.tag) || "before";
+  const caption = cleanString(req.body.caption) || "";
   const photo = {
     id: uuidv4(),
-    url: `/uploads/${req.file.filename}`,
-    tag: cleanString(req.body.tag) || "before",
-    caption: cleanString(req.body.caption),
+    url: `/uploads/${req.file.filename}`, // fallback local URL
+    driveUrl: null,
+    driveFileId: null,
+    tag,
+    caption,
     createdAt: new Date().toISOString()
   };
 
+  // ── Try Google Drive upload ──────────────────────────────────────────
+  try {
+    const token = await getValidDriveToken();
+    if (token) {
+      const jobFolderId = await getOrCreateJobDriveFolder(job, token);
+      // Find the right subfolder (Before / After / Other)
+      const subName = tag === "before" ? "Before" : tag === "after" ? "After" : "Other";
+      // List subfolders to find the right one
+      const subRes = await axios.get(
+        `https://www.googleapis.com/drive/v3/files?q='${jobFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+name='${subName}'+and+trashed=false&fields=files(id,name)`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const subFolderId = subRes.data.files?.[0]?.id || jobFolderId;
+      // Upload file to Drive
+      const ts = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
+      const ext = req.file.originalname.split(".").pop() || (req.file.mimetype.includes("video") ? "mp4" : "jpg");
+      const filename = `${ts}_${tag}.${ext}`;
+      const driveFile = await driveUploadFile(req.file.buffer || require("fs").readFileSync(req.file.path), filename, req.file.mimetype, subFolderId, token);
+      await driveSetPublic(driveFile.id, token);
+      photo.driveUrl = driveFile.webViewLink || driveFile.webContentLink || null;
+      photo.driveFileId = driveFile.id;
+      photo.url = photo.driveUrl || photo.url; // prefer Drive URL
+      console.log("✅ Drive upload:", filename, driveFile.id);
+    }
+  } catch(driveErr) {
+    console.error("Drive upload failed (falling back to local):", driveErr.message);
+  }
+
+  job.photos ||= [];
   job.photos.push(photo);
   try {
     await query(
-      `INSERT INTO job_photos (id, job_id, url, tag, caption, created_at) VALUES ($1,$2,$3,$4,$5,$6)
+      `INSERT INTO job_photos (id, job_id, url, tag, caption, created_at, drive_file_id) VALUES ($1,$2,$3,$4,$5,$6,$7)
        ON CONFLICT (id) DO NOTHING`,
-      [String(photo.id), String(job.id), photo.url, photo.tag, photo.caption || "", photo.createdAt]
+      [String(photo.id), String(job.id), photo.url, photo.tag, photo.caption, photo.createdAt, photo.driveFileId || null]
     );
   } catch (e) { console.error("Photo insert error:", e); }
   memoryDb = db;
@@ -2550,6 +2699,71 @@ app.delete("/jobs/:jobId/photos/:photoId", async (req, res) => {
   broadcastUpdate("photo_deleted", { jobId: job.id, photoId: req.params.photoId });
   res.json({ ok: true });
 });
+
+
+// ── Drive token management ────────────────────────────────────────────────
+app.post("/admin/drive-token", async (req, res) => {
+  try {
+    const { access_token, refresh_token } = req.body;
+    if (refresh_token) {
+      process.env.GOOGLE_DRIVE_REFRESH_TOKEN = refresh_token;
+      await query(
+        `INSERT INTO settings (key, value) VALUES ('google_drive_refresh_token', $1) ON CONFLICT (key) DO UPDATE SET value=$1`,
+        [JSON.stringify({ refresh_token })]
+      );
+    }
+    if (access_token) {
+      await saveDriveToken({ access_token, fetched_at: Date.now() });
+    }
+    res.json({ ok: true });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/admin/drive-status", async (req, res) => {
+  const token = await getDriveToken();
+  res.json({ connected: !!token, folderId: DRIVE_JOBS_FOLDER_ID });
+});
+
+// ── Drive: get files for a job ────────────────────────────────────────────
+app.get("/jobs/:id/drive-files", async (req, res) => {
+  try {
+    const db = readDbRO();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    if (!job.driveFolderId) return res.json({ folders: [], folderId: null });
+
+    const token = await getValidDriveToken();
+    if (!token) return res.json({ folders: [], folderId: job.driveFolderId, error: "no_token" });
+
+    // List subfolders
+    const subRes = await axios.get(
+      `https://www.googleapis.com/drive/v3/files?q='${job.driveFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+trashed=false&fields=files(id,name)`,
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+    const subFolders = subRes.data.files || [];
+
+    // For each subfolder, list files
+    const folders = await Promise.all(subFolders.map(async folder => {
+      const filesRes = await axios.get(
+        `https://www.googleapis.com/drive/v3/files?q='${folder.id}'+in+parents+and+trashed=false&fields=files(id,name,mimeType,webViewLink,webContentLink,thumbnailLink,size,createdTime)&orderBy=createdTime`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      return { name: folder.name, folderId: folder.id, files: filesRes.data.files || [] };
+    }));
+
+    res.json({
+      folderId: job.driveFolderId,
+      folderUrl: `https://drive.google.com/drive/folders/${job.driveFolderId}`,
+      folders
+    });
+  } catch(e) {
+    console.error("Drive files error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+// ── End Drive endpoints ───────────────────────────────────────────────────
 
 /* ---------- INVENTORY ---------- */
 
