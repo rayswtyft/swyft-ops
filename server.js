@@ -92,7 +92,7 @@ const SERVICE_OPTIONS = {
     "Concrete fill with rebar",
     "Concrete fill without rebar"
   ],
-  Labor: ["General labor"],
+  Labor: ["General labor", "Delivery"],
   Junk: ["Junk removal", "Dump truck removal"]
 };
 

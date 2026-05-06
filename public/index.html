@@ -979,33 +979,42 @@
 
 
       
-      <label>Job Type</label>
-      <div class="row" style="margin-bottom:10px;">
-        <button id="jobTypeRegular" class="green" onclick="setJobType('regular')" style="width:auto;">Regular Job</button>
-        <button id="jobTypeDelivery" class="secondary" onclick="setJobType('delivery')" style="width:auto;">Delivery</button>
-      </div>
+      
+<div class="service-card">
+  <h3>Service Address</h3>
 
-      <div id="regularAddressSection">
-        <div class="service-card">
-          <h3>Service Address</h3>
-          <label>Google Maps Autofill</label>
-          <input id="googleAddress" type="text" placeholder="Start typing address..." autocomplete="off" autocorrect="off" spellcheck="false" />
-          <label>Saved Contractor Addresses</label>
-          <select id="savedAddressSelect" onchange="applySavedAddress()">
-            <option value="">Use saved service address (optional)</option>
-          </select>
-          <label>Manual Override Address</label>
-          <input id="manualAddress" type="text" placeholder="Manual address entry" />
-        </div>
-      </div>
+  <label>Google Maps Autofill</label>
+  <input
+    id="googleAddress"
+    type="text"
+    placeholder="Start typing address..."
+    autocomplete="off"
+    autocorrect="off"
+    spellcheck="false"
+  />
 
-      <div id="deliveryAddressSection" class="hidden">
-        <div class="service-card">
-          <h3>Pickup Address</h3>
-          <input id="deliveryPickup" type="text" placeholder="Pickup address" autocomplete="off" autocorrect="off" spellcheck="false" />
-          <h3 style="margin-top:12px;">Drop-off Address</h3>
-          <input id="deliveryDropoff" type="text" placeholder="Drop-off address" autocomplete="off" autocorrect="off" spellcheck="false" />
-        </div>
+  <label>Saved Contractor Addresses</label>
+  <select
+    id="savedAddressSelect"
+    onchange="applySavedAddress()"
+  >
+    <option value="">Use saved service address (optional)</option>
+  </select>
+
+  <label>Manual Override Address</label>
+  <input
+    id="manualAddress"
+    type="text"
+    placeholder="Manual address entry"
+  />
+</div>
+
+      <div id="deliveryAddressSection" class="hidden service-card">
+        <h3>Delivery Addresses</h3>
+        <label>Pickup Address</label>
+        <input id="deliveryPickup" type="text" placeholder="Pickup address" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <label>Drop-off Address</label>
+        <input id="deliveryDropoff" type="text" placeholder="Drop-off address" autocomplete="off" autocorrect="off" spellcheck="false" />
       </div>
 
 
@@ -3025,26 +3034,25 @@ ${s.category === "Junk" && currentMode === "van" ? `
         notes: $("jobNotes").value,
       };
 
-      if (currentJobType === "delivery") {
-        const pickup = $("deliveryPickup").value.trim();
-        const dropoff = $("deliveryDropoff").value.trim();
+      const hasDelivery = services.some(s => s.category === "Labor" && s.subtype === "Delivery");
+      if (hasDelivery) {
+        const pickup = $("deliveryPickup")?.value.trim();
+        const dropoff = $("deliveryDropoff")?.value.trim();
         if (!pickup) return alert("Enter a pickup address");
         if (!dropoff) return alert("Enter a drop-off address");
         jobPayload.jobType = "delivery";
         jobPayload.pickupAddress = pickup;
         jobPayload.dropoffAddress = dropoff;
-        jobPayload.serviceAddress = pickup + " → " + dropoff;
-        jobPayload.services = [{ category: "General Labor", subtype: "Delivery", hours: 0, cost: 0 }];
       } else {
-        const finalAddress = $("manualAddress").value.trim() || $("googleAddress").value.trim();
-        if (!finalAddress) return alert("Enter a service address");
-        if (!services.length) return alert("Add at least one service");
-        jobPayload.serviceAddress = finalAddress;
-        jobPayload.googleAddress = $("googleAddress").value;
-        jobPayload.manualAddress = $("manualAddress").value;
         jobPayload.jobType = "regular";
-        jobPayload.services = services;
       }
+      const finalAddress = $("manualAddress").value.trim() || $("googleAddress").value.trim();
+      if (!finalAddress) return alert("Enter a service address");
+      if (!services.length) return alert("Add at least one service");
+      jobPayload.serviceAddress = finalAddress;
+      jobPayload.googleAddress = $("googleAddress").value;
+      jobPayload.manualAddress = $("manualAddress").value;
+      jobPayload.services = services;
 
       await fetch("/jobs", {
         method:"POST",
@@ -3268,7 +3276,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
         ${job.notes ? `<div class="muted" style="margin-top:10px;">Notes: ${job.notes}</div>` : ""}
 
-        ${currentMode === "van" ? (job.jobType === "delivery" ? `
+        ${currentMode === "van" ? ((job.jobType === "delivery" || (job.services || []).some(s => s.category === "Labor" && s.subtype === "Delivery")) ? `
           <div style="margin-top:10px;">
             <div class="muted" style="font-size:13px;">Pickup</div>
             <strong>${job.pickupAddress || ""}</strong>
@@ -4562,35 +4570,18 @@ async function saveScheduleCrew() {
 
 
 
-    let currentJobType = "regular";
-
-    function setJobType(type) {
-      currentJobType = type;
-      if (type === "delivery") {
-        $("regularAddressSection").classList.add("hidden");
-        $("deliveryAddressSection").classList.remove("hidden");
-        $("jobTypeDelivery").className = "green";
-        $("jobTypeRegular").className = "secondary";
-        // Hide services section for delivery - billed as general labor
-        $("services").innerHTML = "";
-        document.querySelector("button[onclick='addService()']").style.display = "none";
-      } else {
-        $("regularAddressSection").classList.remove("hidden");
-        $("deliveryAddressSection").classList.add("hidden");
-        $("jobTypeRegular").className = "green";
-        $("jobTypeDelivery").className = "secondary";
-        document.querySelector("button[onclick='addService()']").style.display = "";
-        renderServices();
+    function checkDeliveryFields() {
+      // Show delivery address fields if any service has Labor > Delivery selected
+      const hasDelivery = services.some(s => s.category === "Labor" && s.subtype === "Delivery");
+      const section = $("deliveryAddressSection");
+      if (section) {
+        if (hasDelivery) section.classList.remove("hidden");
+        else section.classList.add("hidden");
       }
     }
 
     function openJobModal(){
-      currentJobType = "regular";
-      $("jobTypeRegular").className = "green";
-      $("jobTypeDelivery").className = "secondary";
-      $("regularAddressSection").classList.remove("hidden");
-      $("deliveryAddressSection").classList.add("hidden");
-      document.querySelector("button[onclick='addService()']").style.display = "";
+      if ($("deliveryAddressSection")) $("deliveryAddressSection").classList.add("hidden");
       $("jobModal").classList.remove("hidden");
       setTimeout(initVisibleAddressAutocompletes, 250);
     }
