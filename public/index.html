@@ -2282,7 +2282,12 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       document.getElementById("inventoryModal").classList.remove("hidden");
     }
 
-    function closeInventoryModal() { document.getElementById("inventoryModal").classList.add("hidden"); }
+    function closeInventoryModal() {
+      document.getElementById("inventoryModal").classList.add("hidden");
+      invEditMode = false;
+      // Resume auto-refresh when modal closes
+      if (!syncTimer) syncTimer = setInterval(() => refreshAll(false), AUTO_REFRESH_MS);
+    }
 
     function toggleInventoryEdit() {
       invEditMode = !invEditMode;
@@ -2290,8 +2295,15 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       if (btn) btn.innerText = invEditMode ? "Done Editing" : "Edit";
       document.getElementById("invAddBtn")?.classList.toggle("hidden", !invEditMode);
       document.getElementById("invSaveBtn")?.classList.toggle("hidden", !invEditMode);
-      if (!invEditMode) saveAllInventoryEdits();
-      else renderInventoryModalList();
+      if (invEditMode) {
+        // Pause auto-refresh while editing so changes don't get wiped
+        if (typeof syncTimer !== "undefined" && syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+        renderInventoryModalList();
+      } else {
+        saveAllInventoryEdits();
+        // Resume auto-refresh after saving
+        if (!syncTimer) syncTimer = setInterval(() => refreshAll(false), AUTO_REFRESH_MS);
+      }
     }
 
     async function saveInventoryAndStay() {
@@ -2300,6 +2312,7 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       await saveAllInventoryEdits();
       if (btn) { btn.innerText = "✅ Saved!"; btn.disabled = false; }
       setTimeout(() => { if (btn) btn.innerText = "💾 Save"; }, 1500);
+      // Keep edit mode paused — user is still editing
     }
 
     async function saveAllInventoryEdits() {
