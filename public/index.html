@@ -2164,7 +2164,11 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       if (!el) return;
       if (!low.length) { el.innerHTML = '<div class="muted">No low-stock items.</div>'; return; }
       el.innerHTML = '<div class="alert-row low-stock"><strong>Low stock alerts</strong>' +
-        low.map(item => '<div class="muted" style="margin-top:8px;">' + item.name + ' — ' + (item.displayQuantity ?? item.quantity) + ' ' + (item.displayUnit || item.unit || '') + '</div>').join("") +
+        low.map(item => {
+          const isBoxed = item.totalBags !== null && item.totalBags !== undefined;
+          const qty = isBoxed ? ((item.totalBags / 50).toFixed(2).replace(/\.?0+$/,'') + ' boxes (' + item.totalBags + ' bags)') : ((item.displayQuantity ?? item.quantity) + ' ' + (item.displayUnit || item.unit || ''));
+          return '<div class="muted" style="margin-top:8px;">' + item.name + ' — ' + qty + '</div>';
+        }).join("") +
         '</div>';
     }
 
@@ -2253,16 +2257,25 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
         }
 
         // View mode: show stock per location
+        const BAGS_PER_BOX = 50;
+        const isBoxed = item.totalBags !== null && item.totalBags !== undefined;
         const stockParts = Object.entries(stock)
           .filter(([,v]) => v !== null && v > 0)
-          .map(([loc, v]) => locationLabels[loc] + ': <strong>' + v + '</strong>');
+          .map(([loc, v]) => {
+            if (isBoxed) {
+              const boxes = (v / BAGS_PER_BOX).toFixed(2).replace(/\.?0+$/, '');
+              return locationLabels[loc] + ': <strong>' + boxes + ' boxes</strong> <span class="muted">(' + v + ' bags)</span>';
+            }
+            return locationLabels[loc] + ': <strong>' + v + '</strong>';
+          });
         const stockDisplay = stockParts.length ? stockParts.join(' &nbsp; ') : '<span class="muted">none tracked</span>';
+        const unitLabel = isBoxed ? '' : ('<span class="muted">' + (item.unit||"") + '</span>');
 
         return '<div class="inventory-row ' + (isLow ? "low-stock" : "") + '" style="margin-bottom:8px;padding:10px;">' +
           '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">' +
             '<div style="flex:1;">' +
               '<div><strong style="' + (isLow?"color:#dc2626":"") + '">' + (isLow?"⚠️ ":"") + item.name + '</strong>' + typeBadge + '</div>' +
-              '<div style="font-size:13px;margin-top:4px;">' + stockDisplay + ' <span class="muted">' + (item.unit||"") + '</span></div>' +
+              '<div style="font-size:13px;margin-top:4px;">' + stockDisplay + ' ' + unitLabel + '</div>' +
             '</div>' +
             `<button class="secondary" style="width:auto;padding:6px 14px;font-size:18px;flex-shrink:0;" data-invid="${item.id}" onclick="openInvAdjById(this)">±</button>` +
           '</div>' +
@@ -3990,7 +4003,7 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
             <div>
 
-              <label>${def.label}${currentMode !== "van" ? ` (${fmtMoney(def.price)} each)` : ""}</label>
+              <label>${def.label}${def.inventoryDivisor ? ' <span style="color:#64748b;font-weight:400;font-size:12px;">(enter individual bags — inventory tracked in boxes of ' + def.inventoryDivisor + ')</span>' : ''}${currentMode !== "van" ? ` (${fmtMoney(def.price)} each)` : ""}</label>
 
               <input id="mat-${def.key}" type="number" min="0" step="${def.wholeOnly ? 1 : 0.25}" value="0" />
 

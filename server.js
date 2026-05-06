@@ -96,8 +96,10 @@ const SERVICE_OPTIONS = {
   Junk: ["Junk removal", "Dump truck removal"]
 };
 
+const CONTRACTOR_BAGS_PER_BOX = 50;
+
 const MATERIAL_DEFS = [
-  { key: "contractor_bags", label: "Contractor bags", unitLabel: "qty", price: 1, wholeOnly: true },
+  { key: "contractor_bags", label: "Contractor bags", unitLabel: "bags", price: 1, wholeOnly: true, inventoryUnit: "boxes", inventoryDivisor: 50 },
   { key: "zipper", label: "Zipper", unitLabel: "qty", price: 12, wholeOnly: true },
   { key: "heavy_ramboard", label: "Heavy duty ramboard", unitLabel: "quarter rolls", price: 18.75, wholeOnly: false },
   { key: "medium_ramboard", label: "Medium duty ramboard", unitLabel: "quarter rolls", price: 13.75, wholeOnly: false },
@@ -166,8 +168,9 @@ function defaultInventory() {
       name: "Contractor bags",
       quantity: 550,
       unit: "bags",
-      reorderPoint: 500,
+      reorderPoint: 100,
       active: true,
+      display: { mode: "boxesOf50", perBox: 50, label: "boxes" },
       display: { mode: "boxesOf50", label: "boxes", perBox: 50 }
     },
     { id: uuidv4(), key: "dish_soap", name: "Dish soap", quantity: 5, unit: "bottles", reorderPoint: 3, active: true },
@@ -1060,13 +1063,15 @@ function getInventoryViewItem(item) {
     isBoxed && item.reorderPoint != null
       ? Number((Number(item.reorderPoint) / Number(item.display.perBox || 50)).toFixed(2))
       : item.reorderPoint;
+  const totalBags = isBoxed ? Number(item.quantity || 0) : null;
   return {
     ...item,
     item_type: item.item_type || (["tool","equipment"].includes(item.category) ? "tool" : "consumable"),
     stock: item.stock || { van: item.location === "van" ? item.quantity : null, truck: item.location === "truck" ? item.quantity : null, warehouse: item.location === "warehouse" ? item.quantity : null },
     displayQuantity,
     displayUnit: isBoxed ? item.display.label : item.unit,
-    displayReorderPoint
+    displayReorderPoint,
+    totalBags
   };
 }
 
@@ -1078,7 +1083,7 @@ function lowInventoryItems(db) {
 
 function inventoryDeductionMap() {
   return {
-    contractor_bags: { inventoryKey: "contractor_bags_stock", multiplier: 1 },
+    contractor_bags: { inventoryKey: "contractor_bags_stock", multiplier: 1 / CONTRACTOR_BAGS_PER_BOX },
     zipper: { inventoryKey: null, multiplier: 1 },
     heavy_ramboard: { inventoryKey: null, multiplier: 0.25 },
     medium_ramboard: { inventoryKey: null, multiplier: 0.25 },
