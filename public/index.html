@@ -1954,36 +1954,43 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       if (!el) return;
 
       if (checklistTab === "morning") {
-        // Morning: tools = confirm in van, consumables from warehouse = flag as "needs loading"
-        const tools = items.filter(i => i.item_type === "tool");
-        const consumables = items.filter(i => i.item_type !== "tool");
-        const needsLoad = consumables.filter(i => i.needsLoading);
-        const inVan = consumables.filter(i => !i.needsLoading);
+        // Morning: van tools = confirm in van, warehouse tools/consumables = bring from warehouse
+        const vanTools = items.filter(i => i.item_type === "tool" && !i.needsLoading);
+        const warehouseItems = items.filter(i => i.needsLoading);
+        const warehouseTools = warehouseItems.filter(i => i.item_type === "tool");
+        const warehouseSupplies = warehouseItems.filter(i => i.item_type !== "tool");
+        const vanSupplies = items.filter(i => i.item_type !== "tool" && !i.needsLoading);
 
         let html = "";
 
-        if (tools.length) {
+        if (vanTools.length) {
           html += '<div style="font-weight:700;margin:10px 0 6px;font-size:13px;color:#475569;">🔧 TOOLS — confirm in van</div>';
-          html += tools.map(item => renderMorningItem(date, item)).join("");
+          html += vanTools.map(item => renderMorningItem(date, item)).join("");
         }
-        if (needsLoad.length) {
-          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#b45309;">📦 LOAD FROM WAREHOUSE</div>';
-          html += needsLoad.map(item => renderMorningItem(date, item, true)).join("");
+        if (warehouseTools.length || warehouseSupplies.length) {
+          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#b45309;">📦 BRING FROM WAREHOUSE</div>';
+          html += warehouseTools.map(item => renderMorningItem(date, item, true)).join("");
+          html += warehouseSupplies.map(item => renderMorningItem(date, item, true)).join("");
         }
-        if (inVan.length) {
+        if (vanSupplies.length) {
           html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#475569;">🧴 SUPPLIES — confirm in van</div>';
-          html += inVan.map(item => renderMorningItem(date, item)).join("");
+          html += vanSupplies.map(item => renderMorningItem(date, item)).join("");
         }
         el.innerHTML = html;
       } else {
-        // EOD: tools = confirm back in van, consumables = record how much was used
-        const tools = items.filter(i => i.item_type === "tool");
+        // EOD: van tools = confirm back in van, warehouse tools = confirm returned to warehouse
+        const vanTools = items.filter(i => i.item_type === "tool" && !i.needsLoading);
+        const warehouseTools = items.filter(i => i.item_type === "tool" && i.needsLoading);
         const consumables = items.filter(i => i.item_type !== "tool");
 
         let html = "";
-        if (tools.length) {
+        if (vanTools.length) {
           html += '<div style="font-weight:700;margin:10px 0 6px;font-size:13px;color:#475569;">🔧 TOOLS — confirm back in van</div>';
-          html += tools.map(item => renderEodToolItem(date, item)).join("");
+          html += vanTools.map(item => renderEodToolItem(date, item)).join("");
+        }
+        if (warehouseTools.length) {
+          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#b45309;">📦 WAREHOUSE TOOLS — confirm returned</div>';
+          html += warehouseTools.map(item => renderEodToolItem(date, item, true)).join("");
         }
         if (consumables.length) {
           html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#475569;">🧴 SUPPLIES — record what was used</div>';
@@ -2006,13 +2013,15 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       </div>`;
     }
 
-    function renderEodToolItem(date, item) {
+    function renderEodToolItem(date, item, isWarehouse) {
       const checked = item.eod_checked;
       const safeItem = item.item.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
-      return `<div class="check-row ${checked?"checked":""}" style="border:1px solid ${checked?"#16a34a":"#e2e8f0"};border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;"
+      const borderColor = isWarehouse ? (checked ? "#16a34a" : "#f59e0b") : (checked ? "#16a34a" : "#e2e8f0");
+      return `<div class="check-row ${checked?"checked":""}" style="border:1px solid ${borderColor};border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;"
         data-date="${date}" data-item="${safeItem}" data-checked="${checked}" onclick="handleChecklistTap(this,'eod')">
         <input type="checkbox" ${checked?"checked":""} style="width:20px;height:20px;pointer-events:none;" />
-        <span>${item.item}</span>
+        <span style="flex:1;">${isWarehouse?"📦 ":""}${item.item}</span>
+        ${isWarehouse?'<span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 6px;border-radius:8px;">return to warehouse</span>':""}
       </div>`;
     }
 

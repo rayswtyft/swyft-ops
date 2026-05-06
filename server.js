@@ -1043,7 +1043,8 @@ function buildEnhancedChecklist(date, db) {
       i.name.toLowerCase() === itemName.toLowerCase());
     const itemType = invItem?.item_type || (invItem && ["tool","equipment"].includes(invItem.category) ? "tool" : "consumable");
     const locations = invItem?.stock ? Object.entries(invItem.stock).filter(([,v]) => v !== null && v > 0).map(([loc]) => loc) : [invItem?.location || "van"];
-    const needsLoading = itemType === "consumable" && locations.some(l => l === "warehouse") && !locations.some(l => l === "van" || l === "truck");
+    const isWarehouseOnly = locations.every(l => l === "warehouse") || (locations.some(l => l === "warehouse") && !locations.some(l => l === "van" || l === "truck"));
+    const needsLoading = isWarehouseOnly; // both consumables and tools from warehouse need to be fetched
 
     return {
       item: itemName,
