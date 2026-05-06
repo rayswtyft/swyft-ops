@@ -4126,7 +4126,7 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
         };
 
         const s = document.createElement("script");
-        s.src = "https://maps.googleapis.com/maps/api/js?key=" + googleMapsApiKey + "&libraries=places&loading=async&callback=" + cbName;
+        s.src = "https://maps.googleapis.com/maps/api/js?key=" + googleMapsApiKey + "&libraries=places&v=weekly&callback=" + cbName;
         s.async = true;
         s.onerror = () => {
           _mapsLoadPromise = null;
@@ -4144,19 +4144,32 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       if (input.dataset.acReady === "1") return;
 
       const ok = await loadGooglePlacesScript();
-      if (!ok || !window.google?.maps?.places) return;
+      if (!ok || !window.google?.maps?.places) {
+        console.warn("Maps not ready for", inputId);
+        return;
+      }
 
       try {
+        // Use Autocomplete (legacy but stable)
         const ac = new google.maps.places.Autocomplete(input, {
           types: ["address"],
           componentRestrictions: { country: "us" },
           fields: ["formatted_address", "geometry"]
         });
+        // Prevent form submit on Enter key inside autocomplete
+        input.addEventListener("keydown", function(e) {
+          if (e.key === "Enter") e.preventDefault();
+        });
         ac.addListener("place_changed", () => {
           const place = ac.getPlace();
-          if (place?.formatted_address) input.value = place.formatted_address;
+          if (place?.formatted_address) {
+            input.value = place.formatted_address;
+            // Fire input event so any listeners know the value changed
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          }
         });
         input.dataset.acReady = "1";
+        console.log("✅ Autocomplete ready:", inputId);
       } catch (e) {
         console.warn("Autocomplete init failed:", inputId, e);
       }
