@@ -3142,7 +3142,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
       svc.trenches = trenches;
       svc.linearFeet = trenches.reduce((s,t) => s + Number(t.lengthFt||0), 0);
       // Billing: $8 per linear foot for concrete cutting
-      const CONCRETE_CUTTING_RATE = 8;
+      const CONCRETE_CUTTING_RATE = 25;
       svc.total = Number((svc.linearFeet * CONCRETE_CUTTING_RATE).toFixed(2));
       // Recompute job total
       job.totalCost = job.services.reduce((sum, sv) => sum + (sv.total || 0), 0);
@@ -3723,7 +3723,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
                   ${(s.trenches||[]).length > 0 ? `
                     <div style="margin-top:8px; font-size:13px; background:#f0fff4; border-radius:8px; padding:8px 10px;">
                       <div>Total: <strong>${(s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)} linear ft</strong></div>
-                      <div style="color:#27ae60; font-weight:700;">Billed: $${((s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)*8).toFixed(2)}</div>
+                      ${showMoney ? `<div style="color:#27ae60; font-weight:700;">Billed: $${((s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)*25).toFixed(2)}</div>` : ""}
                     </div>
                   ` : ""}
                 </div>
