@@ -108,51 +108,51 @@ const MATERIAL_DEFS = [
 
 const CHECKLISTS = {
   "Cleaning|Between tenant cleaning": [
-    "Bleach powder", "Latex gloves", "Regular brooms", "Buckets", "Carpet vacuums",
-    "Clean mop pads", "Clorox", "Contractor bags", "Dish soap", "Dish sponge",
+    "Bleach powder", "Latex gloves", "Brooms", "Buckets", "Carpet vacuum",
+    "Mop heads", "Clorox", "Contractor bags", "Dish soap", "Dish sponge",
     "Dustpans", "Floor cleaner", "Garbage bags", "Goo Gone", "Goof Off",
     "Green scrub pads", "Magic erasers", "Metal razor", "Metal sponges", "Mop sticks",
     "Oven cleaner", "Plastic razor", "Rags", "Paper towel", "Scrub Daddies",
-    "Shoulder vacuums", "Spray bottles", "Squeegees", "Toothbrush", "Water pics"
+    "Shoulder vacuum", "Spray bottles", "Squeegees", "Toothbrush", "Water pics"
   ],
   "Cleaning|Deep clean": [
-    "Bleach powder", "Latex gloves", "Regular brooms", "Buckets", "Carpet vacuums",
-    "Clean mop pads", "Clorox", "Contractor bags", "Dish soap", "Dish sponge",
+    "Bleach powder", "Latex gloves", "Brooms", "Buckets", "Carpet vacuum",
+    "Mop heads", "Clorox", "Contractor bags", "Dish soap", "Dish sponge",
     "Dustpans", "Floor cleaner", "Garbage bags", "Goo Gone", "Goof Off",
     "Green scrub pads", "Magic erasers", "Metal razor", "Metal sponges", "Mop sticks",
     "Oven cleaner", "Plastic razor", "Rags", "Paper towel", "Scrub Daddies",
-    "Shoulder vacuums", "Spray bottles", "Squeegees", "Toothbrush", "Water pics"
+    "Shoulder vacuum", "Spray bottles", "Squeegees", "Toothbrush", "Water pics"
   ],
   "Cleaning|Post construction cleanup": [
-    "Bleach powder", "Latex gloves", "Regular brooms", "Construction brooms", "Buckets",
-    "Carpet vacuums", "Clean mop pads", "Clorox", "Contractor bags", "Dish soap",
+    "Bleach powder", "Latex gloves", "Brooms", "Buckets",
+    "Carpet vacuum", "Mop heads", "Clorox", "Contractor bags", "Dish soap",
     "Dish sponge", "Dustpans", "Floor cleaner", "Garbage bags", "Goo Gone", "Goof Off",
     "Green scrub pads", "Magic erasers", "Metal razor", "Metal sponges", "Mop sticks",
     "Oven cleaner", "Plastic razor", "Rags", "Paper towel", "Scrub Daddies",
-    "Shoulder vacuums", "Spray bottles", "Squeegees", "Toothbrush", "Water pics", "Shovels"
+    "Shoulder vacuum", "Spray bottles", "Squeegees", "Toothbrush", "Water pics", "Shovels"
   ],
-  "Cleaning|Site cleanup": ["Construction brooms", "Contractor bags", "Garbage bags", "Shovels"],
+  "Cleaning|Site cleanup": ["Brooms", "Contractor bags", "Garbage bags", "Shovels"],
   "Cleaning|General cleaning": [
-    "Bleach powder", "Latex gloves", "Regular brooms", "Buckets", "Clorox",
+    "Bleach powder", "Latex gloves", "Brooms", "Buckets", "Clorox",
     "Contractor bags", "Dish soap", "Dustpans", "Floor cleaner", "Garbage bags",
     "Magic erasers", "Mop sticks", "Rags", "Paper towel", "Squeegees"
   ],
   "Cleaning|Janitorial cleaning": [
-    "Bleach powder", "Latex gloves", "Regular brooms", "Buckets", "Clean mop pads",
+    "Bleach powder", "Latex gloves", "Brooms", "Buckets", "Mop heads",
     "Clorox", "Contractor bags", "Dish soap", "Dish sponge", "Dustpans",
     "Floor cleaner", "Garbage bags", "Magic erasers", "Mop sticks", "Rags",
     "Paper towel", "Squeegees", "Toothbrush"
   ],
   "Construction|Demo": ["Crowbars", "Drill", "Hammer", "Multi tools", "Recip saws"],
   "Construction|Concrete cutting": [
-    "Electric concrete cutter", "Big jackhammer", "Medium jackhammer", "Bosch",
+    "Electric concrete cutter", "Big jackhammer", "Medium jackhammer (red)", "Bosch mini jackhammer",
     "Hose", "Fans", "Wheelbarrow", "Ear protection", "Goggles", "Masks",
-    "Shovels", "Regular brooms", "Construction brooms", "Mix fuel"
+    "Shovels", "Brooms", "Mixed fuel"
   ],
   "Construction|Concrete fill with rebar": ["10 mil plastic", "Buckets", "Concrete bags", "Shovels", "Trowels"],
   "Construction|Concrete fill without rebar": ["10 mil plastic", "Buckets", "Concrete bags", "Shovels", "Trowels"],
-  "Junk|Junk removal": ["Straps and tie-downs", "Safety gloves", "Contractor bags", "Construction brooms"],
-  "Junk|Dump truck removal": ["Straps and tie-downs", "Safety gloves", "Contractor bags", "Construction brooms"],
+  "Junk|Junk removal": ["Straps and tie-downs", "Safety gloves", "Contractor bags", "Brooms"],
+  "Junk|Dump truck removal": ["Straps and tie-downs", "Safety gloves", "Contractor bags", "Brooms"],
   "Labor|Delivery": ["Guardrail tape", "Medium duty ramboard"]
 };
 
