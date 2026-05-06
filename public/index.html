@@ -3338,18 +3338,31 @@ ${s.category === "Junk" && currentMode === "van" ? `
         ${currentMode === "van" ? ((job.jobType === "delivery" || (job.services || []).some(s => s.category === "Labor" && s.subtype === "Delivery")) ? `
           <div style="margin-top:10px;">
             ${!job.arrivedTime ? `
-              <div class="muted" style="font-size:13px;">📦 Pickup Location</div>
-              <strong>${job.pickupAddress || ""}</strong>
-              <div class="quick-actions" style="margin-top:8px;">
-                <button class="blue" onclick="openDirections(${JSON.stringify(job.pickupAddress || "")})">Directions</button>
-                <button class="green" onclick="jobAction('/jobs/${job.id}/arrived')">✅ Picked Up</button>
+              <div style="margin-bottom:12px;">
+                <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">📦 Pickup</div>
+                <div style="font-size:22px;font-weight:800;color:#1e293b;margin-top:4px;line-height:1.2;">${job.pickupAddress || ""}</div>
+                <div class="quick-actions" style="margin-top:10px;">
+                  <button class="blue" onclick="openDirections(${JSON.stringify(job.pickupAddress || "")})">Directions</button>
+                  <button class="green" onclick="jobAction('/jobs/${job.id}/arrived')">✅ Picked Up</button>
+                </div>
+              </div>
+              <div style="border-top:1px solid #e2e8f0;padding-top:10px;opacity:0.5;">
+                <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">🏁 Drop-off</div>
+                <div style="font-size:14px;font-weight:500;color:#64748b;margin-top:2px;">${job.dropoffAddress || ""}</div>
               </div>
             ` : `
-              <div class="muted" style="font-size:13px;">🏁 Drop-off Location</div>
-              <strong>${job.dropoffAddress || ""}</strong>
-              <div class="quick-actions" style="margin-top:8px;">
-                <button class="blue" onclick="openDirections(${JSON.stringify(job.dropoffAddress || "")})">Directions</button>
-                <button class="green" onclick="jobAction('/jobs/${job.id}/finish')">✅ Delivered</button>
+              <div style="border-bottom:1px solid #e2e8f0;padding-bottom:10px;margin-bottom:12px;opacity:0.5;">
+                <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">📦 Pickup</div>
+                <div style="font-size:14px;font-weight:500;color:#64748b;margin-top:2px;">${job.pickupAddress || ""}</div>
+                <div style="font-size:11px;color:#16a34a;margin-top:4px;">✅ Picked up</div>
+              </div>
+              <div>
+                <div style="font-size:11px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">🏁 Drop-off</div>
+                <div style="font-size:22px;font-weight:800;color:#1e293b;margin-top:4px;line-height:1.2;">${job.dropoffAddress || ""}</div>
+                <div class="quick-actions" style="margin-top:10px;">
+                  <button class="blue" onclick="openDirections(${JSON.stringify(job.dropoffAddress || "")})">Directions</button>
+                  <button class="green" onclick="jobAction('/jobs/${job.id}/finish')">✅ Delivered</button>
+                </div>
               </div>
             `}
             <div class="quick-actions" style="margin-top:10px;">
