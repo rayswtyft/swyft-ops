@@ -794,6 +794,7 @@
           <div class="quick-actions" style="margin-top:10px;">
 
             <button class="secondary" onclick="openEmployeeTimeClockModal()">Employee Time Clock Report</button>
+            <button class="secondary" style="width:auto;" onclick="openWeeklyReportsModal()">📊 Weekly Reports</button>
 
             <button class="secondary" onclick="openEmployeeManagerModal()">Edit Employees</button>
 
@@ -1323,6 +1324,40 @@
   </div>
 
 
+
+  <!-- ══════════ WEEKLY REPORTS MODAL ══════════ -->
+  <div id="weeklyReportsModal" class="modal hidden">
+    <div class="modal-content" style="max-width:700px;max-height:92vh;overflow-y:auto;">
+      <div class="topbar">
+        <h2>📊 Weekly Reports</h2>
+        <button class="secondary" style="width:auto;" onclick="closeWeeklyReportsModal()">Close</button>
+      </div>
+
+      <!-- Week picker -->
+      <div class="row" style="margin-bottom:12px;gap:8px;align-items:center;">
+        <label style="font-weight:600;">Week:</label>
+        <input id="weeklyReportWeek" type="week" style="flex:1;" />
+        <button class="blue" onclick="loadWeeklyReports()">Load</button>
+        <button class="secondary" onclick="exportWeeklyPayrollCSV()">Export CSV</button>
+      </div>
+
+      <!-- Tabs -->
+      <div class="row" style="gap:8px;margin-bottom:16px;">
+        <button id="tabPayroll" class="blue" onclick="showWeeklyTab('payroll')">💰 Payroll</button>
+        <button id="tabActivity" class="secondary" onclick="showWeeklyTab('activity')">📍 Activity Log</button>
+      </div>
+
+      <!-- Payroll panel -->
+      <div id="weeklyPayrollPanel">
+        <div id="weeklyPayrollBody"><div class="muted">Select a week and press Load.</div></div>
+      </div>
+
+      <!-- Activity panel -->
+      <div id="weeklyActivityPanel" class="hidden">
+        <div id="weeklyActivityBody"><div class="muted">Select a week and press Load.</div></div>
+      </div>
+    </div>
+  </div>
 
   <div id="employeeClockModal" class="modal hidden">
 
@@ -5511,6 +5546,167 @@ async function saveScheduleCrew() {
       }
     }
     // ========================= END CHECKLIST EDITOR =========================
+
+  
+    // ══════════ WEEKLY REPORTS ══════════
+    let weeklyReportData = { payroll: null, activity: null };
+
+    function openWeeklyReportsModal() {
+      // Default to current ISO week
+      const now = new Date();
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      const isoWeek = `${d.getUTCFullYear()}-W${String(week).padStart(2,"0")}`;
+      document.getElementById("weeklyReportWeek").value = isoWeek;
+      document.getElementById("weeklyReportsModal").classList.remove("hidden");
+      loadWeeklyReports();
+    }
+
+    function closeWeeklyReportsModal() {
+      document.getElementById("weeklyReportsModal").classList.add("hidden");
+    }
+
+    function showWeeklyTab(tab) {
+      document.getElementById("weeklyPayrollPanel").classList.toggle("hidden", tab !== "payroll");
+      document.getElementById("weeklyActivityPanel").classList.toggle("hidden", tab !== "activity");
+      document.getElementById("tabPayroll").className = tab === "payroll" ? "blue" : "secondary";
+      document.getElementById("tabActivity").className = tab === "activity" ? "blue" : "secondary";
+    }
+
+    async function loadWeeklyReports() {
+      const week = document.getElementById("weeklyReportWeek").value;
+      if (!week) return alert("Pick a week first");
+      // Convert from "2026-W19" (HTML week input) to our format
+      const isoWeek = week.replace("W0","W").replace(/W(\d)$/,"W0$1");
+
+      // Load both in parallel
+      const [payRes, actRes] = await Promise.all([
+        fetch(`/reports/weekly-payroll?week=${encodeURIComponent(isoWeek)}`),
+        fetch(`/reports/weekly-activity?week=${encodeURIComponent(isoWeek)}`)
+      ]);
+      weeklyReportData.payroll = await payRes.json();
+      weeklyReportData.activity = await actRes.json();
+
+      renderWeeklyPayroll();
+      renderWeeklyActivity();
+    }
+
+    function fmtGeo(loc) {
+      if (!loc || (!loc.lat && !loc.lng)) return "<span class='muted'>No GPS</span>";
+      const acc = loc.accuracy ? ` ±${Math.round(loc.accuracy)}m` : "";
+      return `<a href="${loc.mapsLink}" target="_blank" style="color:#4CAF50;font-size:12px;">📍 ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}${acc}</a>`;
+    }
+
+    function renderWeeklyPayroll() {
+      const data = weeklyReportData.payroll;
+      if (!data || data.error) {
+        document.getElementById("weeklyPayrollBody").innerHTML = `<div class='muted'>${data?.error || "No data"}</div>`;
+        return;
+      }
+      let html = `<div style="margin-bottom:12px;"><strong>Week of ${data.start} → ${data.end}</strong></div>`;
+      if (!data.employees.length) {
+        html += "<div class='muted'>No clock entries this week.</div>";
+      } else {
+        data.employees.forEach(emp => {
+          html += `
+          <div class="service-card" style="margin-bottom:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <strong style="font-size:16px;">${emp.name}</strong>
+              <span style="background:#1a1a2e;color:#fff;padding:4px 10px;border-radius:12px;font-size:13px;">
+                ${emp.totalHours} hrs (${emp.totalMinutes} min)
+              </span>
+            </div>
+            <div style="margin-top:10px;">
+              ${emp.entries.map(e => `
+                <div style="border-left:3px solid #4CAF50;padding:8px 12px;margin-bottom:8px;background:rgba(0,0,0,0.2);border-radius:0 8px 8px 0;">
+                  <div style="font-weight:600;margin-bottom:4px;">${e.date}</div>
+                  <div style="font-size:13px;margin-bottom:2px;">
+                    🟢 In: ${e.clockIn ? new Date(e.clockIn).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—"}
+                    &nbsp;→&nbsp;
+                    🔴 Out: ${e.clockOut ? new Date(e.clockOut).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "<em>Active</em>"}
+                    ${e.hours != null ? `<span style="margin-left:8px;color:#aaa;">(${e.hours} hrs)</span>` : ""}
+                  </div>
+                  <div style="font-size:12px;margin-top:4px;">
+                    Clock-in: ${fmtGeo(e.clockInLocation)}<br/>
+                    Clock-out: ${fmtGeo(e.clockOutLocation)}
+                  </div>
+                </div>
+              `).join("")}
+            </div>
+          </div>`;
+        });
+      }
+      document.getElementById("weeklyPayrollBody").innerHTML = html;
+    }
+
+    function renderWeeklyActivity() {
+      const data = weeklyReportData.activity;
+      if (!data || data.error) {
+        document.getElementById("weeklyActivityBody").innerHTML = `<div class='muted'>${data?.error || "No data"}</div>`;
+        return;
+      }
+      const ACTION_COLORS = {
+        clock_in: "#4CAF50", clock_out: "#f44336",
+        on_my_way: "#2196F3", arrived: "#00BCD4",
+        start: "#FF9800", stop: "#9C27B0", finished: "#8BC34A"
+      };
+      let html = `<div style="margin-bottom:12px;"><strong>Week of ${data.start} → ${data.end}</strong> — ${data.totalEvents} events</div>`;
+      if (!data.totalEvents) {
+        html += "<div class='muted'>No activity this week.</div>";
+      } else {
+        Object.entries(data.byDay).sort().forEach(([day, events]) => {
+          html += `<div style="font-weight:600;margin:14px 0 6px;border-bottom:1px solid #333;padding-bottom:4px;">${day}</div>`;
+          events.forEach(e => {
+            const color = ACTION_COLORS[e.action] || "#aaa";
+            const time = e.at ? new Date(e.at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
+            html += `
+              <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:8px;padding:6px 10px;background:rgba(0,0,0,0.2);border-radius:8px;border-left:3px solid ${color};">
+                <div style="min-width:55px;font-size:12px;color:#aaa;">${time}</div>
+                <div style="flex:1;">
+                  <span style="color:${color};font-weight:600;">${e.actionLabel}</span>
+                  ${e.employeeName ? `<span style="color:#aaa;font-size:12px;"> — ${e.employeeName}</span>` : ""}
+                  ${e.serviceAddress ? `<div style="font-size:12px;color:#aaa;">${e.serviceAddress}</div>` : ""}
+                  <div style="font-size:12px;margin-top:2px;">${fmtGeo({lat:e.lat,lng:e.lng,accuracy:e.accuracy,mapsLink:e.mapsLink})}</div>
+                </div>
+              </div>`;
+          });
+        });
+      }
+      document.getElementById("weeklyActivityBody").innerHTML = html;
+    }
+
+    function exportWeeklyPayrollCSV() {
+      const data = weeklyReportData.payroll;
+      if (!data || !data.employees) return alert("Load a week first");
+      const rows = [["Employee","Date","Clock In","Clock Out","Hours","Clock-In Lat","Clock-In Lng","Clock-Out Lat","Clock-Out Lng"]];
+      data.employees.forEach(emp => {
+        emp.entries.forEach(e => {
+          rows.push([
+            emp.name,
+            e.date,
+            e.clockIn ? new Date(e.clockIn).toLocaleString() : "",
+            e.clockOut ? new Date(e.clockOut).toLocaleString() : "",
+            e.hours ?? "",
+            e.clockInLocation?.lat ?? "",
+            e.clockInLocation?.lng ?? "",
+            e.clockOutLocation?.lat ?? "",
+            e.clockOutLocation?.lng ?? ""
+          ]);
+        });
+        rows.push([emp.name + " TOTAL", "", "", "", emp.totalHours, "", "", "", ""]);
+        rows.push([]);
+      });
+      const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+      const blob = new Blob([csv], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `payroll-${data.week}.csv`; a.click();
+      URL.revokeObjectURL(url);
+    }
+    // ══════════ END WEEKLY REPORTS ══════════
 
   </script>
 

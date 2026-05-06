@@ -1817,6 +1817,206 @@ app.get("/reporting", (_req, res) => {
   );
 });
 
+
+/* ──────────────────────────────────────────────────────
+   WEEKLY PAYROLL REPORT  GET /reports/weekly-payroll?week=YYYY-Www
+   Returns per-employee hours + clock-in/out times + locations
+   week param format: "2026-W19"  (ISO week)
+   ────────────────────────────────────────────────────── */
+app.get("/reports/weekly-payroll", (req, res) => {
+  try {
+    const db = readDbRO();
+    const weekParam = req.query.week || "";           // e.g. "2026-W19"
+
+    // Parse week boundaries  (Mon–Sun)
+    function weekBounds(isoWeek) {
+      // isoWeek = "YYYY-Www"
+      const [yearStr, wStr] = isoWeek.split("-W");
+      const year = parseInt(yearStr, 10);
+      const week = parseInt(wStr, 10);
+      // Find Thursday of that ISO week → tells us the year
+      // Jan 4 is always in week 1
+      const jan4 = new Date(Date.UTC(year, 0, 4));
+      const jan4Day = jan4.getUTCDay() || 7; // 1=Mon…7=Sun
+      const monday = new Date(jan4.getTime() - (jan4Day - 1) * 86400000 + (week - 1) * 7 * 86400000);
+      const sunday = new Date(monday.getTime() + 6 * 86400000);
+      return {
+        start: monday.toISOString().slice(0, 10),
+        end: sunday.toISOString().slice(0, 10)
+      };
+    }
+
+    // Default to current week if not provided
+    function currentIsoWeek() {
+      const now = new Date();
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+    }
+
+    const isoWeek = weekParam || currentIsoWeek();
+    let bounds;
+    try { bounds = weekBounds(isoWeek); }
+    catch(e) { return res.status(400).json({ error: "Invalid week format. Use YYYY-Www e.g. 2026-W19" }); }
+
+    // Filter clock entries within the week
+    const entries = (db.timeClockEntries || []).filter(t => {
+      const d = (t.date || "").slice(0, 10);
+      return d >= bounds.start && d <= bounds.end;
+    });
+
+    // Group by employee
+    const byEmployee = {};
+    entries.forEach(t => {
+      const empId = String(t.employeeId || t.name || "unknown");
+      if (!byEmployee[empId]) {
+        byEmployee[empId] = {
+          employeeId: t.employeeId,
+          name: t.name || "Unknown",
+          totalMinutes: 0,
+          entries: []
+        };
+      }
+      const mins = t.clockOut
+        ? Math.round((new Date(t.clockOut) - new Date(t.clockIn)) / 60000)
+        : null;
+      byEmployee[empId].totalMinutes += (mins || 0);
+
+      const formatGeo = (geo) => {
+        if (!geo) return null;
+        return {
+          lat: geo.latitude,
+          lng: geo.longitude,
+          accuracy: geo.accuracy,
+          at: geo.capturedAt || null,
+          mapsLink: (geo.latitude && geo.longitude)
+            ? `https://maps.google.com/?q=${geo.latitude},${geo.longitude}`
+            : null
+        };
+      };
+
+      byEmployee[empId].entries.push({
+        date: t.date,
+        clockIn: t.clockIn,
+        clockOut: t.clockOut || null,
+        minutes: mins,
+        hours: mins != null ? +(mins / 60).toFixed(2) : null,
+        clockInLocation: formatGeo(t.clockInGeo),
+        clockOutLocation: formatGeo(t.clockOutGeo)
+      });
+    });
+
+    const employees = Object.values(byEmployee).map(emp => ({
+      ...emp,
+      totalHours: +(emp.totalMinutes / 60).toFixed(2),
+      entries: emp.entries.sort((a, b) => a.date.localeCompare(b.date))
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({
+      week: isoWeek,
+      start: bounds.start,
+      end: bounds.end,
+      employees
+    });
+  } catch (err) {
+    console.error("Weekly payroll report error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/* ──────────────────────────────────────────────────────
+   WEEKLY ACTIVITY / LOCATION REPORT  GET /reports/weekly-activity?week=YYYY-Www
+   Returns every button press (on-my-way, arrived, start, stop, clock-in, clock-out)
+   with GPS coordinates for that week
+   ────────────────────────────────────────────────────── */
+app.get("/reports/weekly-activity", (req, res) => {
+  try {
+    const db = readDbRO();
+    const weekParam = req.query.week || "";
+
+    function weekBounds(isoWeek) {
+      const [yearStr, wStr] = isoWeek.split("-W");
+      const year = parseInt(yearStr, 10);
+      const week = parseInt(wStr, 10);
+      const jan4 = new Date(Date.UTC(year, 0, 4));
+      const jan4Day = jan4.getUTCDay() || 7;
+      const monday = new Date(jan4.getTime() - (jan4Day - 1) * 86400000 + (week - 1) * 7 * 86400000);
+      const sunday = new Date(monday.getTime() + 6 * 86400000);
+      return { start: monday.toISOString().slice(0, 10), end: sunday.toISOString().slice(0, 10) };
+    }
+
+    function currentIsoWeek() {
+      const now = new Date();
+      const d = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+    }
+
+    const isoWeek = weekParam || currentIsoWeek();
+    let bounds;
+    try { bounds = weekBounds(isoWeek); }
+    catch(e) { return res.status(400).json({ error: "Invalid week format. Use YYYY-Www e.g. 2026-W19" }); }
+
+    const ACTION_LABELS = {
+      on_my_way: "On My Way",
+      arrived: "Arrived",
+      start: "Started Job",
+      stop: "Stopped Job",
+      finished: "Finished Job",
+      clock_in: "Clock In",
+      clock_out: "Clock Out"
+    };
+
+    const events = (db.routeEvents || [])
+      .filter(e => {
+        const d = (e.date || e.createdAt || "").slice(0, 10);
+        return d >= bounds.start && d <= bounds.end;
+      })
+      .map(e => ({
+        action: e.action,
+        actionLabel: ACTION_LABELS[e.action] || e.action,
+        date: e.date || e.createdAt?.slice(0, 10),
+        at: e.createdAt,
+        employeeName: e.employeeName || null,
+        jobId: e.jobId || null,
+        serviceAddress: e.serviceAddress || null,
+        lat: e.latitude || null,
+        lng: e.longitude || null,
+        accuracy: e.accuracy || null,
+        mapsLink: (e.latitude && e.longitude)
+          ? `https://maps.google.com/?q=${e.latitude},${e.longitude}`
+          : null
+      }))
+      .sort((a, b) => (a.at || "").localeCompare(b.at || ""));
+
+    // Also group by day for easy reading
+    const byDay = {};
+    events.forEach(e => {
+      const day = (e.date || "unknown");
+      byDay[day] ||= [];
+      byDay[day].push(e);
+    });
+
+    res.json({
+      week: isoWeek,
+      start: bounds.start,
+      end: bounds.end,
+      totalEvents: events.length,
+      byDay,
+      allEvents: events
+    });
+  } catch (err) {
+    console.error("Weekly activity report error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/history", (_req, res) => {
   const db = readDbRO();
 
