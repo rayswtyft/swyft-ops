@@ -4348,17 +4348,22 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       return _mapsLoadPromise;
     }
 
-    async function initAddressAutocomplete(inputId) {
+    async function initAddressAutocomplete(inputId, retries = 3) {
       const input = document.getElementById(inputId);
       if (!input) return;
-      // Don't skip if already marked — always re-check visibility
+      // Don't re-attach if already ready and still visible
       const rect = input.getBoundingClientRect();
       const isVisible = rect.width > 0 && rect.height > 0;
       if (input.dataset.acReady === "1" && isVisible) return;
 
       const ok = await loadGooglePlacesScript();
       if (!ok || !window.google?.maps?.places) {
-        console.warn("Maps not ready for", inputId);
+        // Retry a few times in case Maps is still loading
+        if (retries > 0) {
+          setTimeout(() => initAddressAutocomplete(inputId, retries - 1), 800);
+        } else {
+          console.warn("Maps not ready for", inputId, "— giving up");
+        }
         return;
       }
 
@@ -4385,6 +4390,9 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
         console.log("✅ Autocomplete attached:", inputId);
       } catch (e) {
         console.warn("Autocomplete init failed:", inputId, e);
+        if (retries > 0) {
+          setTimeout(() => initAddressAutocomplete(inputId, retries - 1), 800);
+        }
       }
     }
 
