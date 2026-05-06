@@ -1010,11 +1010,11 @@
 </div>
 
       <div id="deliveryAddressSection" class="hidden service-card">
-        <h3>Delivery Addresses</h3>
+        <h3>🚚 Delivery</h3>
         <label>Pickup Address</label>
-        <input id="deliveryPickup" type="text" placeholder="Pickup address" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <input id="deliveryPickup" type="text" placeholder="Where to pick up from" autocomplete="off" autocorrect="off" spellcheck="false" />
         <label>Drop-off Address</label>
-        <input id="deliveryDropoff" type="text" placeholder="Drop-off address" autocomplete="off" autocorrect="off" spellcheck="false" />
+        <input id="deliveryDropoff" type="text" placeholder="Where to deliver to" autocomplete="off" autocorrect="off" spellcheck="false" />
       </div>
 
 
@@ -3300,18 +3300,21 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
         ${currentMode === "van" ? ((job.jobType === "delivery" || (job.services || []).some(s => s.category === "Labor" && s.subtype === "Delivery")) ? `
           <div style="margin-top:10px;">
-            <div class="muted" style="font-size:13px;">Pickup</div>
-            <strong>${job.pickupAddress || ""}</strong>
-            <div class="quick-actions" style="margin-top:8px;">
-              <button class="blue" onclick="openDirections(${JSON.stringify(job.pickupAddress || "")})">Directions to Pickup</button>
-              <button class="secondary" onclick="jobAction('/jobs/${job.id}/arrived')">Arrived at Pickup</button>
-            </div>
-            <div class="muted" style="font-size:13px;margin-top:12px;">Drop-off</div>
-            <strong>${job.dropoffAddress || ""}</strong>
-            <div class="quick-actions" style="margin-top:8px;">
-              <button class="blue" onclick="openDirections(${JSON.stringify(job.dropoffAddress || "")})">Directions to Drop-off</button>
-              <button class="green" onclick="jobAction('/jobs/${job.id}/finish')">Finished Delivery</button>
-            </div>
+            ${!job.arrivedTime ? `
+              <div class="muted" style="font-size:13px;">📦 Pickup Location</div>
+              <strong>${job.pickupAddress || ""}</strong>
+              <div class="quick-actions" style="margin-top:8px;">
+                <button class="blue" onclick="openDirections(${JSON.stringify(job.pickupAddress || "")})">Directions</button>
+                <button class="green" onclick="jobAction('/jobs/${job.id}/arrived')">✅ Picked Up</button>
+              </div>
+            ` : `
+              <div class="muted" style="font-size:13px;">🏁 Drop-off Location</div>
+              <strong>${job.dropoffAddress || ""}</strong>
+              <div class="quick-actions" style="margin-top:8px;">
+                <button class="blue" onclick="openDirections(${JSON.stringify(job.dropoffAddress || "")})">Directions</button>
+                <button class="green" onclick="jobAction('/jobs/${job.id}/finish')">✅ Delivered</button>
+              </div>
+            `}
             <div class="quick-actions" style="margin-top:10px;">
               <button class="orange" onclick="leaveJobOpen('${job.id}')">Leave Open</button>
             </div>
