@@ -2766,6 +2766,36 @@ app.get("/qb/review", (req, res) => {
   });
 });
 
+
+app.post("/qb/invoice", async (req, res) => {
+  try {
+    const db = readDb();
+    if (!db.settings.quickbooks.connected) {
+      return res.status(400).json({ error: "QuickBooks is not connected" });
+    }
+    const jobId = cleanString(req.body.jobId);
+    if (!jobId) return res.status(400).json({ error: "jobId is required" });
+
+    const rawJob = db.jobs.find(j => String(j.id) === String(jobId));
+    if (!rawJob) return res.status(404).json({ error: "Job not found" });
+
+    const job = hydrateJob(rawJob, db);
+    const invoice = await qbCreateInvoiceForJob(db, job);
+
+    rawJob.quickbooksStatus = "sent";
+    rawJob.quickbooksInvoiceId = invoice.Id || null;
+    memoryDb = db;
+
+    await query(`UPDATE jobs SET quickbooks_status='sent', quickbooks_invoice_id=$1 WHERE id=$2`,
+      [invoice.Id || null, String(jobId)]);
+
+    broadcastUpdate("qb_sent", {});
+    res.json({ invoiceId: invoice.Id || null, success: true });
+  } catch (e) {
+    console.error("QB invoice error:", e.response?.data || e.message);
+    res.status(500).json({ error: e.response?.data?.Fault?.Error?.[0]?.Message || e.message });
+  }
+});
 app.post("/qb/send-day", async (req, res) => {
   const db = readDb();
   const date = cleanString(req.body.date) || db.dailySetup.date || todayString();
