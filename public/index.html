@@ -4163,7 +4163,8 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
     }
 
     function initVisibleAddressAutocompletes() {
-      ["googleAddress", "estimateAddress", "recurringAddress", "editAddress", "billingAddress"]
+      ["googleAddress", "estimateAddress", "recurringAddress", "editAddress", "billingAddress",
+       "deliveryPickup", "deliveryDropoff"]
         .forEach(id => initAddressAutocomplete(id));
     }
     // ===== END MAPS =====
@@ -4878,12 +4879,18 @@ async function saveScheduleCrew() {
     function openJobModal(){
       if ($("deliveryAddressSection")) $("deliveryAddressSection").classList.add("hidden");
       $("jobModal").classList.remove("hidden");
-      setTimeout(initVisibleAddressAutocompletes, 250);
+      setTimeout(initVisibleAddressAutocompletes, 600);
     }
 
-    function closeJobModal(){ $("jobModal").classList.add("hidden"); }
+    function closeJobModal(){
+      $("jobModal").classList.add("hidden");
+      ["googleAddress","deliveryPickup","deliveryDropoff"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) delete el.dataset.acReady;
+      });
+    }
 
-    function openEstimateCreateModal(){ $("estimateCreateModal").classList.remove("hidden"); setTimeout(initVisibleAddressAutocompletes, 250); }
+    function openEstimateCreateModal(){ $("estimateCreateModal").classList.remove("hidden"); setTimeout(initVisibleAddressAutocompletes, 600); }
 
     function closeEstimateCreateModal(){ $("estimateCreateModal").classList.add("hidden"); }
 
@@ -5343,7 +5350,7 @@ async function saveScheduleCrew() {
     let recurringServices = [];
     function openRecurringJobModal(){
       $("recurringJobModal").classList.remove("hidden");
-      setTimeout(initVisibleAddressAutocompletes, 250);
+      setTimeout(initVisibleAddressAutocompletes, 600);
       $("recurringStartDate").value = $("scheduleDate").value || dailySetup.date || todayLocalDate();
       $("recurringContractor").innerHTML = contractors.map(c => `<option value="${c.id}">${contractorLabel(c)}</option>`).join("");
       recurringServices = [{ category:"Cleaning", subtype:"General cleaning", crewSize: dailySetup.crewSize || 1, hoursManual:0, junkLoad:"Quarter load", junkPrice:250, linearFeet:0 }];
