@@ -1643,6 +1643,22 @@ app.get("/maps-config", (_req, res) => {
   res.json({ googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || "" });
 });
 
+// Server-side proxy for Google Places Autocomplete (avoids CORS on iOS)
+app.get("/places-autocomplete", async (_req, res) => {
+  const input = _req.query.input || "";
+  const sessiontoken = _req.query.sessiontoken || "";
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey || !input) return res.json({ predictions: [] });
+  try {
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&types=address&components=country:us&sessiontoken=${encodeURIComponent(sessiontoken)}&key=${apiKey}`;
+    const r = await axios.get(url);
+    res.json({ predictions: r.data.predictions || [] });
+  } catch (e) {
+    console.error("Places proxy error:", e.message);
+    res.json({ predictions: [] });
+  }
+});
+
 app.get("/settings", (_req, res) => {
   const db = readDbRO();
 
