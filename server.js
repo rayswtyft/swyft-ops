@@ -1384,22 +1384,66 @@ async function qbCreateInvoiceForJob(db, job) {
 
   const customer = await qbCreateCustomer(db, contractor);
   const lines = [];
+  const LABOR_RATE = 1792;
 
   job.services.forEach(s => {
-    if (Number(s.baseTotal || 0) > 0) {
+    const isHourlyService = isHourly(s);
+    const hours = Number(s.hoursWorked || 0);
+    const crew = Number(s.crewSize || 1);
+
+    if (isHourlyService) {
+      // Labor: Qty = total man-hours, Rate = 1792/hr
+      const totalHours = Number((hours * crew).toFixed(2));
+      const laborTotal = Number((totalHours * LABOR_RATE).toFixed(2));
+      if (totalHours > 0) {
+        lines.push({
+          DetailType: "SalesItemLineDetail",
+          Amount: laborTotal,
+          Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${crew} worker${crew !== 1 ? "s" : ""} × ${hours} hrs`,
+          SalesItemLineDetail: {
+            Qty: totalHours,
+            UnitPrice: LABOR_RATE
+          }
+        });
+      }
+    } else if (s.category === "Junk") {
+      const amt = Number(s.junkPrice || 0);
+      if (amt > 0) {
+        lines.push({
+          DetailType: "SalesItemLineDetail",
+          Amount: amt,
+          Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${s.junkLoad || ""}`,
+          SalesItemLineDetail: { Qty: 1, UnitPrice: amt }
+        });
+      }
+    } else if (isConcrete(s)) {
+      const amt = Number(s.baseTotal || 0);
+      if (amt > 0) {
+        const desc = s.subtype === "Concrete cutting"
+          ? `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${s.linearFeet || 0} linear ft`
+          : `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""})`;
+        lines.push({
+          DetailType: "SalesItemLineDetail",
+          Amount: amt,
+          Description: desc,
+          SalesItemLineDetail: { Qty: Number(s.linearFeet || 1), UnitPrice: Number((amt / Math.max(s.linearFeet || 1, 1)).toFixed(2)) }
+        });
+      }
+    } else if (Number(s.baseTotal || 0) > 0) {
       lines.push({
         DetailType: "SalesItemLineDetail",
         Amount: Number(s.baseTotal || 0),
-        Description: `${s.category} - ${s.subtype}`,
+        Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""})`,
         SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.baseTotal || 0) }
       });
     }
 
+    // Materials as a separate line if any
     if (Number(s.materialsTotal || 0) > 0) {
       lines.push({
         DetailType: "SalesItemLineDetail",
         Amount: Number(s.materialsTotal || 0),
-        Description: `Materials for ${s.category} - ${s.subtype}`,
+        Description: `Materials - ${s.subtype} (${job.serviceDate || ""})`,
         SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.materialsTotal || 0) }
       });
     }
@@ -1409,7 +1453,7 @@ async function qbCreateInvoiceForJob(db, job) {
     lines.push({
       DetailType: "SalesItemLineDetail",
       Amount: Number(job.totalCost || 0),
-      Description: `Job ${job.id}`,
+      Description: `Services - ${job.serviceAddress || ""} (${job.serviceDate || ""})`,
       SalesItemLineDetail: { Qty: 1, UnitPrice: Number(job.totalCost || 0) }
     });
   }
@@ -1417,7 +1461,8 @@ async function qbCreateInvoiceForJob(db, job) {
   const payload = {
     CustomerRef: { value: customer.Id },
     TxnDate: job.serviceDate,
-    PrivateNote: `Job #${job.id} - ${job.serviceAddress || ""}`,
+    CustomerMemo: { value: `${job.serviceAddress || ""}` },
+    PrivateNote: `Job #${job.id} | ${job.serviceDate || ""} | ${job.serviceAddress || ""}`,
     Line: lines
   };
 
