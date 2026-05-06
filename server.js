@@ -150,7 +150,8 @@ const CHECKLISTS = {
   "Construction|Concrete fill with rebar": ["10 mil vapor barrier", "buckets", "concrete", "dirt compactor", "mud mixer", "rebar", "shovel", "trowel"],
   "Construction|Concrete fill without rebar": ["10 mil vapor barrier", "buckets", "concrete", "dirt compactor", "mud mixer", "shovel", "trowel"],
   "Labor|General labor": ["work gloves", "broom", "shovel", "basic hand tools", "safety glasses"],
-  "Junk|Junk removal": ["truck readiness", "straps and tie-downs", "safety gloves", "contractor bags", "broom"]
+  "Junk|Junk removal": ["truck readiness", "straps and tie-downs", "safety gloves", "contractor bags", "broom"],
+  "Labor|Delivery": ["guardrail tape", "medium duty ramboard", "board"]
 };
 
 function defaultInventory() {
