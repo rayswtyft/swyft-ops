@@ -1179,6 +1179,11 @@
 
       </div>
 
+      <div style="margin-bottom:12px; display:flex; align-items:center; gap:10px;">
+        <label style="font-size:14px; font-weight:600;">Date:</label>
+        <input type="date" id="qbDatePicker" style="font-size:14px; border:1px solid #ccc; border-radius:8px; padding:6px 10px;" />
+        <button class="secondary" style="width:auto; font-size:13px;" onclick="loadQbReviewForDate()">Load</button>
+      </div>
       <div id="qbReviewBody"></div>
 
       <div class="row" style="margin-top:16px;">
@@ -4551,7 +4556,17 @@ async function saveScheduleCrew() {
 
     async function openQuickBooksReview(){
 
-      const date = $("dailyDate").value || dailySetup.date;
+      const defaultDate = $("dailyDate").value || dailySetup.date;
+      const picker = $("qbDatePicker");
+      if (picker && !picker.value) picker.value = defaultDate;
+
+      await loadQbReviewForDate();
+
+    }
+
+    async function loadQbReviewForDate(){
+
+      const date = ($("qbDatePicker") && $("qbDatePicker").value) || $("dailyDate").value || dailySetup.date;
 
       const res = await fetch(`/qb/review?date=${encodeURIComponent(date)}`);
 
@@ -4621,7 +4636,7 @@ async function saveScheduleCrew() {
 
         body: JSON.stringify({
 
-          date: $("dailyDate").value || dailySetup.date,
+          date: ($("qbDatePicker") && $("qbDatePicker").value) || $("dailyDate").value || dailySetup.date,
 
           jobIds: selected
 
