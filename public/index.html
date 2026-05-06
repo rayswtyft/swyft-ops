@@ -2144,8 +2144,9 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       const res = await fetch("/inventory");
       const data = await res.json();
       inventory = Array.isArray(data) ? data : (data.items || []);
-      // Don't wipe inputs if user is actively editing
-      if (!invEditMode) renderInventoryModalList();
+      // Don't wipe inputs if user is actively editing or adding an item
+      const addFormVisible = !document.getElementById("invAddForm")?.classList.contains("hidden");
+      if (!invEditMode && !addFormVisible) renderInventoryModalList();
     }
 
 
@@ -2341,8 +2342,16 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       if (typeEl) typeEl.value = ["tool","equipment"].includes(cat) ? "tool" : "consumable";
     }
 
-    function showAddInventoryForm() { document.getElementById("invAddForm")?.classList.remove("hidden"); }
-    function hideAddInventoryForm() { document.getElementById("invAddForm")?.classList.add("hidden"); }
+    function showAddInventoryForm() {
+      document.getElementById("invAddForm")?.classList.remove("hidden");
+      // Pause auto-refresh while user is filling in the form
+      if (typeof syncTimer !== "undefined" && syncTimer) { clearInterval(syncTimer); syncTimer = null; }
+    }
+    function hideAddInventoryForm() {
+      document.getElementById("invAddForm")?.classList.add("hidden");
+      // Resume auto-refresh
+      if (!syncTimer) syncTimer = setInterval(() => refreshAll(false), AUTO_REFRESH_MS);
+    }
 
     async function addInventoryItem() {
       const name = document.getElementById("newInvName")?.value.trim();
