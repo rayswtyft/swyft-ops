@@ -1392,17 +1392,19 @@ async function qbCreateInvoiceForJob(db, job) {
     const crew = Number(s.crewSize || 1);
 
     if (isHourlyService) {
-      // Labor: Qty = total man-hours, Rate = 1792/hr
-      const totalHours = Number((hours * crew).toFixed(2));
-      const laborTotal = Number((totalHours * LABOR_RATE).toFixed(2));
-      if (totalHours > 0) {
+      // Labor: Qty = crew size, Rate = hours × per-worker rate
+      // e.g. 2 workers × 4hrs × $35/hr → Qty: 2, Rate: $140
+      const perWorkerRate = Number(rateForService(s));
+      const perWorkerTotal = Number((hours * perWorkerRate).toFixed(2));
+      const laborTotal = Number((perWorkerTotal * crew).toFixed(2));
+      if (laborTotal > 0) {
         lines.push({
           DetailType: "SalesItemLineDetail",
           Amount: laborTotal,
-          Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${crew} worker${crew !== 1 ? "s" : ""} × ${hours} hrs`,
+          Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${hours} hrs @ $${perWorkerRate}/hr`,
           SalesItemLineDetail: {
-            Qty: totalHours,
-            UnitPrice: LABOR_RATE
+            Qty: crew,
+            UnitPrice: perWorkerTotal
           }
         });
       }
