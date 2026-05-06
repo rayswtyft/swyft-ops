@@ -311,6 +311,7 @@ function serviceRowToObject(s) {
     crewSize: Number(s.crew_size || 1),
     hoursManual: Number(s.hours_manual || 0),
     linearFeet: Number(s.linear_feet || 0),
+    trenches: Array.isArray(s.trench_data) ? s.trench_data : [],
     junkLoad: s.junk_load || "Quarter load",
     junkPrice: Number(s.junk_price || 175),
     serviceDate: s.service_date || null,
@@ -332,10 +333,10 @@ async function migrateDatabase() {
   try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_type TEXT DEFAULT 'regular'`); } catch(e) {}
   try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pickup_address TEXT`); } catch(e) {}
   try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS dropoff_address TEXT`); } catch(e) {}
-  await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb)`);
+  await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb, trench_data JSONB DEFAULT '[]'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS job_photos (id TEXT PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, url TEXT, tag TEXT, caption TEXT, created_at TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS estimates (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, status TEXT DEFAULT 'open', created_at TEXT, converted_job_id TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb)`);
+  await query(`CREATE TABLE IF NOT EXISTS estimate_services (id SERIAL PRIMARY KEY, estimate_id TEXT REFERENCES estimates(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb, trench_data JSONB DEFAULT '[]'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS inventory (id TEXT PRIMARY KEY, item_key TEXT UNIQUE, name TEXT, quantity NUMERIC, unit TEXT, reorder_point NUMERIC, active BOOLEAN DEFAULT true, display JSONB)`);
   await query(`CREATE TABLE IF NOT EXISTS employees (id TEXT PRIMARY KEY, name TEXT NOT NULL, active BOOLEAN DEFAULT true, created_at TEXT, bio_credential TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS time_clock_entries (id TEXT PRIMARY KEY, employee_id TEXT, employee_name TEXT, clock_in TEXT, clock_out TEXT, minutes NUMERIC, entry_date TEXT, clock_in_geo JSONB, clock_out_geo JSONB)`);
@@ -350,6 +351,8 @@ await query(`
   )
 `);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS setup_date TEXT`);
+  await query(`ALTER TABLE job_services ADD COLUMN IF NOT EXISTS trench_data JSONB DEFAULT '[]'::jsonb`);
+  await query(`ALTER TABLE estimate_services ADD COLUMN IF NOT EXISTS trench_data JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS crew_size INTEGER DEFAULT 1`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS lunch_breaks JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
@@ -524,9 +527,9 @@ db.inventory = inventoryRes.rows.map(i => {
 
 async function insertServiceRow(client, table, parentColumn, parentId, s, index) {
   await client.query(
-    `INSERT INTO ${table} (${parentColumn}, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
+    `INSERT INTO ${table} (${parentColumn}, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo, trench_data)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-    [parentId, index, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
+    [parentId, index, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}, s.trenches || []]
   );
 }
 
@@ -595,10 +598,10 @@ async function upsertJob(client_or_query_fn, job) {
   let idx = 0;
   for (const s of job.services || []) {
     await q(
-      `INSERT INTO job_services (job_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
-       ON CONFLICT (job_id, service_index) DO UPDATE SET category=$3, subtype=$4, crew_size=$5, hours_manual=$6, linear_feet=$7, junk_load=$8, junk_price=$9, service_date=$10, on_my_way_time=$11, arrived_time=$12, start_time=$13, end_time=$14, materials_used=$15, inventory_deducted_at=$16, action_geo=$17`,
-      [String(job.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
+      `INSERT INTO job_services (job_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo, trench_data)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       ON CONFLICT (job_id, service_index) DO UPDATE SET category=$3, subtype=$4, crew_size=$5, hours_manual=$6, linear_feet=$7, junk_load=$8, junk_price=$9, service_date=$10, on_my_way_time=$11, arrived_time=$12, start_time=$13, end_time=$14, materials_used=$15, inventory_deducted_at=$16, action_geo=$17, trench_data=$18`,
+      [String(job.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}, JSON.stringify(s.trenches || [])]
     );
   }
 
@@ -636,9 +639,9 @@ async function upsertEstimate(estimate) {
   let idx = 0;
   for (const s of estimate.services || []) {
     await query(
-      `INSERT INTO estimate_services (estimate_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo)
+      `INSERT INTO estimate_services (estimate_id, service_index, category, subtype, crew_size, hours_manual, linear_feet, junk_load, junk_price, service_date, on_my_way_time, arrived_time, start_time, end_time, materials_used, inventory_deducted_at, action_geo, trench_data)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-      [String(estimate.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}]
+      [String(estimate.id), idx++, s.category || "Cleaning", s.subtype || "General cleaning", Number(s.crewSize || 1), Number(s.hoursManual || 0), Number(s.linearFeet || 0), s.junkLoad || "Quarter load", Number(s.junkPrice || 175), s.serviceDate || null, s.onMyWayTime || null, s.arrivedTime || null, s.startTime || null, s.endTime || null, s.materialsUsed || {}, s.inventoryDeductedAt || null, s.actionGeo || {}, JSON.stringify(s.trenches || [])]
     );
   }
 }
@@ -878,6 +881,7 @@ function normalizeService(raw = {}, defaultCrewSize = 1) {
     crewSize: Number(raw.crewSize ?? defaultCrewSize ?? 1),
     hoursManual: Number(raw.hoursManual || 0),
     linearFeet: Number(raw.linearFeet || 0),
+    trenches: Array.isArray(raw.trenches) ? raw.trenches : [],
     junkLoad: raw.junkLoad || "Quarter load",
     junkPrice: Number(raw.junkPrice ?? junkPriceForLoad(raw.junkLoad)),
     onMyWayTime: raw.onMyWayTime || null,
@@ -888,6 +892,20 @@ function normalizeService(raw = {}, defaultCrewSize = 1) {
     inventoryDeductedAt: raw.inventoryDeductedAt || null
   };
 
+  // If trenches provided, derive linearFeet from sum of lengths
+  if (Array.isArray(s.trenches) && s.trenches.length > 0) {
+    s.linearFeet = s.trenches.reduce((sum, t) => sum + Number(t.lengthFt || 0), 0);
+  }
+  // Calculate cubic feet and bags needed for concrete cutting
+  if (s.subtype === "Concrete cutting" && Array.isArray(s.trenches) && s.trenches.length > 0) {
+    s.cubicFeet = s.trenches.reduce((sum, t) => {
+      const l = Number(t.lengthFt || 0);
+      const w = Number(t.widthIn || 0) / 12;
+      const d = Number(t.depthIn || 0) / 12;
+      return sum + (l * w * d);
+    }, 0);
+    s.bagsNeeded = Math.ceil(s.cubicFeet / 0.45);
+  }
   s.travelMinutes = calcTravelMinutes(s);
   s.hoursWorked = calcHoursWorked(s);
   s.materialsBreakdown = materialsBreakdown(s);

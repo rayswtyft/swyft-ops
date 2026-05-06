@@ -3046,7 +3046,36 @@ ${s.category === "Junk" && currentMode === "van" ? `
 ` : ""}
 
 
-          ${isConcrete(s) ? `
+          ${s.subtype === "Concrete cutting" ? `
+            <div style="margin-top:8px;">
+              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Trenches</div>
+              ${(s.trenches||[]).map((t,ti) => `
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:6px; margin-bottom:6px; align-items:end;">
+                  <div>
+                    <div style="font-size:11px; color:#888; margin-bottom:2px;">Length (ft)</div>
+                    <input type="number" min="0" step="0.5" value="${t.lengthFt||0}" style="width:100%;" onchange="${fnPrefix}UpdateTrench(${i},${ti},'lengthFt',this.value)" />
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:#888; margin-bottom:2px;">Width (in)</div>
+                    <input type="number" min="0" step="1" value="${t.widthIn||0}" style="width:100%;" onchange="${fnPrefix}UpdateTrench(${i},${ti},'widthIn',this.value)" />
+                  </div>
+                  <div>
+                    <div style="font-size:11px; color:#888; margin-bottom:2px;">Depth (in)</div>
+                    <input type="number" min="0" step="1" value="${t.depthIn||0}" style="width:100%;" onchange="${fnPrefix}UpdateTrench(${i},${ti},'depthIn',this.value)" />
+                  </div>
+                  <button class="secondary" style="width:auto;padding:6px 10px;font-size:12px;" onclick="${fnPrefix}RemoveTrench(${i},${ti})">✕</button>
+                </div>
+              `).join("")}
+              <button class="secondary" style="width:auto;font-size:13px;margin-top:4px;" onclick="${fnPrefix}AddTrench(${i})">+ Add Trench</button>
+              ${(s.trenches||[]).length > 0 ? `
+                <div style="margin-top:8px; font-size:13px; color:#555; background:#f5f5f5; border-radius:8px; padding:8px 10px;">
+                  <div>Total linear ft: <strong>${(s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)} ft</strong></div>
+                  <div>Total cubic ft: <strong>${(s.trenches||[]).reduce((sum,t)=>sum+(Number(t.lengthFt||0)*(Number(t.widthIn||0)/12)*(Number(t.depthIn||0)/12)),0).toFixed(2)} cu ft</strong></div>
+                  <div>80lb bags to fill: <strong>${Math.ceil((s.trenches||[]).reduce((sum,t)=>sum+(Number(t.lengthFt||0)*(Number(t.widthIn||0)/12)*(Number(t.depthIn||0)/12)),0)/0.45)} bags</strong></div>
+                </div>
+              ` : ""}
+            </div>
+          ` : isConcrete(s) ? `
 
             <input type="number" min="0" step="1" value="${s.linearFeet || 0}" placeholder="Linear feet" onchange="${fnPrefix}(${i}, 'linearFeet', this.value)" />
 
@@ -3063,6 +3092,68 @@ ${s.category === "Junk" && currentMode === "van" ? `
     }
 
 
+
+    // Van app trench functions
+    async function vanAddTrench(jobId, svcIdx) {
+      const job = db.jobs.find(j => String(j.id) === String(jobId));
+      if (!job) return;
+      const svc = job.services[svcIdx];
+      if (!svc.trenches) svc.trenches = [];
+      svc.trenches.push({ lengthFt: 0, widthIn: 0, depthIn: 0 });
+      await fetch(`/jobs/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ services: job.services })
+      });
+      await refreshAll();
+    }
+    async function vanRemoveTrench(jobId, svcIdx, trenchIdx) {
+      const job = db.jobs.find(j => String(j.id) === String(jobId));
+      if (!job) return;
+      job.services[svcIdx].trenches.splice(trenchIdx, 1);
+      job.services[svcIdx].linearFeet = job.services[svcIdx].trenches.reduce((s,t) => s + Number(t.lengthFt||0), 0);
+      await fetch(`/jobs/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ services: job.services })
+      });
+      await refreshAll();
+    }
+    async function vanSaveTrenches(jobId, svcIdx) {
+      const job = db.jobs.find(j => String(j.id) === String(jobId));
+      if (!job) return;
+      const svc = job.services[svcIdx];
+      const trenches = (svc.trenches || []).map((t, ti) => ({
+        lengthFt: Number(document.getElementById(`vanTL-${jobId}-${svcIdx}-${ti}`)?.value || t.lengthFt || 0),
+        widthIn: Number(document.getElementById(`vanTW-${jobId}-${svcIdx}-${ti}`)?.value || t.widthIn || 0),
+        depthIn: Number(document.getElementById(`vanTD-${jobId}-${svcIdx}-${ti}`)?.value || t.depthIn || 0),
+      }));
+      svc.trenches = trenches;
+      svc.linearFeet = trenches.reduce((s,t) => s + Number(t.lengthFt||0), 0);
+      await fetch(`/jobs/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ services: job.services })
+      });
+      await refreshAll();
+    }
+
+    function updateJobServiceUpdateTrench(si, ti, field, val) {
+      if (!services[si].trenches) services[si].trenches = [];
+      services[si].trenches[ti] = { ...services[si].trenches[ti], [field]: Number(val) };
+      services[si].linearFeet = services[si].trenches.reduce((s,t) => s + Number(t.lengthFt||0), 0);
+      renderServices();
+    }
+    function updateJobServiceAddTrench(si) {
+      if (!services[si].trenches) services[si].trenches = [];
+      services[si].trenches.push({ lengthFt: 0, widthIn: 0, depthIn: 0 });
+      renderServices();
+    }
+    function updateJobServiceRemoveTrench(si, ti) {
+      services[si].trenches.splice(ti, 1);
+      services[si].linearFeet = services[si].trenches.reduce((s,t) => s + Number(t.lengthFt||0), 0);
+      renderServices();
+    }
 
     function renderServices(){
 
@@ -3474,7 +3565,35 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
 
 
-                ${isConcrete(s) ? `<input id="editFeet-${i}" type="number" min="0" step="1" value="${s.linearFeet || 0}" />` : ""}
+                ${s.subtype === "Concrete cutting" ? `
+                  <div style="margin-top:8px;">
+                    <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Trenches</div>
+                    <div id="editTrenchContainer-${i}">
+                      ${(s.trenches||[]).map((t,ti) => `
+                        <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:6px; margin-bottom:6px; align-items:end;">
+                          <div>
+                            <div style="font-size:11px; color:#888; margin-bottom:2px;">Length (ft)</div>
+                            <input type="number" min="0" step="0.5" value="${t.lengthFt||0}" id="editTrenchL-${i}-${ti}" style="width:100%;" />
+                          </div>
+                          <div>
+                            <div style="font-size:11px; color:#888; margin-bottom:2px;">Width (in)</div>
+                            <input type="number" min="0" step="1" value="${t.widthIn||0}" id="editTrenchW-${i}-${ti}" style="width:100%;" />
+                          </div>
+                          <div>
+                            <div style="font-size:11px; color:#888; margin-bottom:2px;">Depth (in)</div>
+                            <input type="number" min="0" step="1" value="${t.depthIn||0}" id="editTrenchD-${i}-${ti}" style="width:100%;" />
+                          </div>
+                        </div>
+                      `).join("")}
+                    </div>
+                    ${(s.trenches||[]).length > 0 ? `
+                      <div style="font-size:12px; color:#555; margin-top:4px;">
+                        Total: ${(s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)} linear ft |
+                        ${Math.ceil((s.trenches||[]).reduce((sum,t)=>sum+(Number(t.lengthFt||0)*(Number(t.widthIn||0)/12)*(Number(t.depthIn||0)/12)),0)/0.45)} bags to fill
+                      </div>
+                    ` : ""}
+                  </div>
+                ` : isConcrete(s) ? `<input id="editFeet-${i}" type="number" min="0" step="1" value="${s.linearFeet || 0}" />` : ""}
 
 
 
@@ -3535,7 +3654,13 @@ ${s.category === "Junk" && currentMode === "van" ? `
     ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label}</option>`).join("")}
   </select>
 ` : s.category === "Junk" ? `Load: ${s.junkLoad}` : ""}
-              ${isConcrete(s) ? `Linear feet: ${s.linearFeet}` : ""}
+              ${s.subtype === "Concrete cutting" && s.trenches && s.trenches.length > 0 ? `
+                <div style="margin-top:6px;">
+                  ${s.trenches.map((t,ti) => `<div style="font-size:12px; color:#555;">Trench ${ti+1}: ${t.lengthFt}ft × ${t.widthIn}" × ${t.depthIn}"</div>`).join("")}
+                  <div style="font-size:13px; margin-top:4px;"><strong>Total: ${s.trenches.reduce((sum,t)=>sum+Number(t.lengthFt||0),0)} linear ft</strong></div>
+                  <div style="font-size:12px; color:#555;">Cubic ft: ${s.trenches.reduce((sum,t)=>sum+(Number(t.lengthFt||0)*(Number(t.widthIn||0)/12)*(Number(t.depthIn||0)/12)),0).toFixed(2)} | 80lb bags to fill: ${Math.ceil(s.trenches.reduce((sum,t)=>sum+(Number(t.lengthFt||0)*(Number(t.widthIn||0)/12)*(Number(t.depthIn||0)/12)),0)/0.45)}</div>
+                </div>
+              ` : isConcrete(s) ? `Linear feet: ${s.linearFeet}` : ""}
 
             </div>
 
@@ -3544,6 +3669,33 @@ ${s.category === "Junk" && currentMode === "van" ? `
             ${showMoney ? `<div class="muted" style="margin-top:4px;">Materials: ${fmtMoney(s.materialsTotal || 0)}</div><div style="font-weight:800;margin-top:6px;">Service Total: ${fmtMoney(s.total)}</div>` : ""}
 
 
+
+            ${s.subtype === "Concrete cutting" && s.startTime && !s.endTime ? `
+              <div style="margin-top:10px; background:#f9f9f9; border-radius:10px; padding:10px;">
+                <div style="font-size:13px; font-weight:600; margin-bottom:8px;">📏 Log Trenches</div>
+                <div id="vanTrenchList-${job.id}-${i}">
+                  ${(s.trenches||[]).map((t,ti) => `
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:5px; margin-bottom:6px; align-items:end;">
+                      <div>
+                        <div style="font-size:11px; color:#888;">Length (ft)</div>
+                        <input type="number" min="0" step="0.5" value="${t.lengthFt||''}" placeholder="0" id="vanTL-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+                      </div>
+                      <div>
+                        <div style="font-size:11px; color:#888;">Width (in)</div>
+                        <input type="number" min="0" step="1" value="${t.widthIn||''}" placeholder="0" id="vanTW-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+                      </div>
+                      <div>
+                        <div style="font-size:11px; color:#888;">Depth (in)</div>
+                        <input type="number" min="0" step="1" value="${t.depthIn||''}" placeholder="0" id="vanTD-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+                      </div>
+                      <button onclick="vanRemoveTrench('${job.id}',${i},${ti})" style="background:#eee;border:none;border-radius:6px;padding:6px 8px;font-size:14px;cursor:pointer;">✕</button>
+                    </div>
+                  `).join("")}
+                </div>
+                <button onclick="vanAddTrench('${job.id}',${i})" style="background:#e8f0fe;color:#1a56db;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;">+ Add Trench</button>
+                <button onclick="vanSaveTrenches('${job.id}',${i})" style="background:#1a56db;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;margin-left:8px;">Save Trenches</button>
+              </div>
+            ` : ""}
 
             ${isHourly(s) ? `
 
@@ -3773,7 +3925,18 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
           hoursManual: Number($(`editHours-${i}`)?.value || s.hoursManual || 0),
 
-          linearFeet: Number($(`editFeet-${i}`)?.value || s.linearFeet || 0),
+          linearFeet: s.subtype === "Concrete cutting" && s.trenches && s.trenches.length > 0
+            ? s.trenches.reduce((sum,t) => sum + Number(t.lengthFt||0), 0)
+            : Number($(`editFeet-${i}`)?.value || s.linearFeet || 0),
+          trenches: s.subtype === "Concrete cutting" ? (() => {
+            const container = document.getElementById(`editTrenchContainer-${i}`);
+            if (!container) return s.trenches || [];
+            return (s.trenches||[]).map((t,ti) => ({
+              lengthFt: Number(document.getElementById(`editTrenchL-${i}-${ti}`)?.value || t.lengthFt || 0),
+              widthIn: Number(document.getElementById(`editTrenchW-${i}-${ti}`)?.value || t.widthIn || 0),
+              depthIn: Number(document.getElementById(`editTrenchD-${i}-${ti}`)?.value || t.depthIn || 0),
+            }));
+          })() : (s.trenches || []),
 
           junkLoad,
 
