@@ -836,9 +836,30 @@ function storeJobGeo(job, action, geo) {
   job.actionGeo[action] = cleanGeo;
 }
 
-function recordRouteEvent(db, event = {}) {
+async function reverseGeocode(lat, lng) {
+  try {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey || lat == null || lng == null) return "";
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.status === "OK" && data.results && data.results[0]) {
+      return data.results[0].formatted_address || "";
+    }
+  } catch (e) {
+    console.error("Reverse geocode error:", e);
+  }
+  return "";
+}
+
+async function recordRouteEvent(db, event = {}) {
   db.routeEvents ||= [];
   const cleanGeo = normalizeGeo(event.geo);
+  let address = cleanGeo?.address || event.address || "";
+  // If we have coordinates but no address, reverse geocode it
+  if (!address && cleanGeo?.latitude != null && cleanGeo?.longitude != null) {
+    address = await reverseGeocode(cleanGeo.latitude, cleanGeo.longitude);
+  }
   const row = {
     id: uuidv4(),
     action: event.action || "event",
@@ -847,7 +868,7 @@ function recordRouteEvent(db, event = {}) {
     employeeId: event.employeeId == null ? null : String(event.employeeId),
     employeeName: event.employeeName || "",
     serviceAddress: event.serviceAddress || "",
-    address: cleanGeo?.address || event.address || "",
+    address,
     latitude: cleanGeo?.latitude ?? null,
     longitude: cleanGeo?.longitude ?? null,
     accuracy: cleanGeo?.accuracy ?? null,
@@ -859,7 +880,7 @@ function recordRouteEvent(db, event = {}) {
   query(
     `INSERT INTO route_events (id, action, job_id, service_index, employee_id, employee_name, service_address, formatted_address, latitude, longitude, accuracy, event_date, created_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (id) DO NOTHING`,
-    [row.id, row.action, row.jobId, row.serviceIndex, row.employeeId, row.employeeName || "", row.serviceAddress || "", row.address || "", row.latitude, row.longitude, row.accuracy, row.date, row.at]
+    [row.id, row.action, row.jobId, row.serviceIndex, row.employeeId, row.employeeName || "", row.serviceAddress || "", address, row.latitude, row.longitude, row.accuracy, row.date, row.at]
   ).catch(e => console.error("Route event persist error:", e));
   return row;
 }
@@ -2117,10 +2138,11 @@ app.get("/reports/weekly-activity", (req, res) => {
         action: e.action,
         actionLabel: ACTION_LABELS[e.action] || e.action,
         date: e.date || e.createdAt?.slice(0, 10),
-        at: e.createdAt,
+        at: e.at || e.createdAt,
         employeeName: e.employeeName || null,
         jobId: e.jobId || null,
         serviceAddress: e.serviceAddress || null,
+        gpsAddress: e.address || null,
         lat: e.latitude || null,
         lng: e.longitude || null,
         accuracy: e.accuracy || null,
@@ -2396,7 +2418,7 @@ app.post("/jobs/:id/on-my-way", async (req, res) => {
     for (const service of job.services || []) {
       if (!service.onMyWayTime) service.onMyWayTime = now;
     }
-    recordRouteEvent(db, { action: "on_my_way", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await recordRouteEvent(db, { action: "on_my_way", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
     memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
@@ -2418,7 +2440,7 @@ app.post("/jobs/:id/arrived", async (req, res) => {
     for (const service of job.services || []) {
       if (!service.arrivedTime) service.arrivedTime = now;
     }
-    recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await recordRouteEvent(db, { action: "arrived", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
     memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
@@ -2440,7 +2462,7 @@ app.post("/jobs/:id/finish", async (req, res) => {
     for (const service of job.services || []) {
       if (!service.endTime) service.endTime = now;
     }
-    recordRouteEvent(db, { action: "finished", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await recordRouteEvent(db, { action: "finished", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
     memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
@@ -2603,7 +2625,7 @@ app.post("/jobs/:id/services/:index/start", async (req, res) => {
     service.startTime = new Date().toISOString();
     service.endTime = null;
     storeServiceGeo(service, "start", req.body.geo);
-    recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await recordRouteEvent(db, { action: "start", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     await upsertJob(query, job);
     memoryDb = db;
     broadcastUpdate("job_updated", { id: job.id });
@@ -2618,7 +2640,7 @@ app.post("/jobs/:id/services/:index/stop", async (req, res) => {
   try {
     service.endTime = new Date().toISOString();
     storeServiceGeo(service, "stop", req.body.geo);
-    recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
     deductInventoryForJobIfNeeded(db, job);
     if (job.services.length && job.services.every(s => s.endTime || !isHourly(s))) {
@@ -3470,7 +3492,7 @@ app.post("/time-clock/clock-in", async (req, res) => {
     if (active) return res.status(400).json({ error: `${employee.name} is already clocked in` });
     const row = { id: uuidv4(), employeeId: employee.id, name: employee.name, clockIn: new Date().toISOString(), clockOut: null, minutes: null, date: cleanString(req.body.date) || db.dailySetup.date || todayString(), clockInGeo: normalizeGeo(req.body.geo), clockOutGeo: null };
     db.timeClockEntries.push(row);
-    recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
+    await recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
     // Write directly to Postgres first, then update memory
     await upsertClockEntry(row);
     memoryDb = db;
@@ -3492,7 +3514,7 @@ app.post("/time-clock/clock-out", async (req, res) => {
     if (!row) return res.status(400).json({ error: `${employee.name} is not currently clocked in` });
     row.clockOut = new Date().toISOString();
     row.clockOutGeo = normalizeGeo(req.body.geo);
-    recordRouteEvent(db, { action: "clock_out", employeeId: employee.id, employeeName: employee.name, date: row.date || todayString(), geo: req.body.geo });
+    await recordRouteEvent(db, { action: "clock_out", employeeId: employee.id, employeeName: employee.name, date: row.date || todayString(), geo: req.body.geo });
     row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
     // Write directly to Postgres first, then update memory
     await upsertClockEntry(row);
@@ -3534,4 +3556,31 @@ initializeDatabaseBackedState()
     console.error("Failed to initialize database-backed app:", err);
     process.exit(1);
   });
+
+app.get("/admin/backfill-addresses", async (_req, res) => {
+  try {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.json({ error: "No Google Maps API key" });
+    const result = await query(`SELECT id, latitude, longitude FROM route_events WHERE (formatted_address IS NULL OR formatted_address = '') AND latitude IS NOT NULL AND longitude IS NOT NULL`);
+    const rows = result.rows;
+    let updated = 0;
+    for (const row of rows) {
+      try {
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${row.latitude},${row.longitude}&key=${apiKey}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        if (data.status === "OK" && data.results && data.results[0]) {
+          const addr = data.results[0].formatted_address || "";
+          await query(`UPDATE route_events SET formatted_address=$1 WHERE id=$2`, [addr, row.id]);
+          updated++;
+        }
+      } catch(e) { console.error("Backfill error for", row.id, e); }
+    }
+    await loadDb();
+    res.json({ success: true, total: rows.length, updated });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 

@@ -485,32 +485,33 @@
     .ipad-safe .service-card{padding:16px}
 
   
-    /* Custom address suggestion dropdown */
-    .addr-suggestions {
-      position: fixed;
+    /* Google Maps autocomplete dropdown - must escape modal overflow clipping */
+    .pac-container {
+      z-index: 99999 !important;
+      position: fixed !important;
       background: #fff;
       border: 1px solid #ddd;
-      border-radius: 10px;
-      box-shadow: 0 6px 24px rgba(0,0,0,0.18);
-      z-index: 99999;
-      max-height: 220px;
-      overflow-y: auto;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
       font-family: inherit;
+      margin-top: 2px;
     }
-    .addr-suggestion-item {
-      padding: 12px 16px;
+    .pac-item {
+      padding: 10px 14px;
       font-size: 14px;
       cursor: pointer;
       color: #1a1a2e;
-      border-bottom: 1px solid #f0f0f0;
-      line-height: 1.3;
     }
-    .addr-suggestion-item:last-child { border-bottom: none; }
-    .addr-suggestion-item:hover, .addr-suggestion-item.highlighted {
-      background: #f0f4ff;
+    .pac-item:hover, .pac-item-selected {
+      background: #f3f4f6;
     }
-    .addr-suggestion-main { font-weight: 600; }
-    .addr-suggestion-sub { font-size: 12px; color: #888; margin-top: 2px; }
+    .pac-item-query {
+      font-weight: 600;
+      color: #1a1a2e;
+    }
+    .pac-matched {
+      font-weight: 700;
+    }
 
     .inv-tab{
       background:#f1f5f9;color:#475569;border:1px solid #cbd5e1;
@@ -1840,9 +1841,11 @@ function junkOptionsForService(service){
         const mapsRes = await fetch("/maps-config");
         const mapsData = await mapsRes.json();
         googleMapsApiKey = mapsData.googleMapsApiKey || "";
-        // No Maps SDK needed — using server-side proxy for autocomplete
         if (googleMapsApiKey) {
-          initVisibleAddressAutocompletes();
+          // Pre-load the script so it's ready when modals open
+          loadGooglePlacesScript().then(loaded => {
+            if (loaded) initVisibleAddressAutocompletes();
+          });
         }
       } catch (e) { console.warn("Maps config load error:", e); }
 
@@ -2746,6 +2749,7 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
 
     // ── Edit contractor address chips ────────────────────────────
     let _editContractorAddresses = [];
+    let _editAddressAutocomplete = null;
 
     function addEditContractorAddress() {
       const input = $("editAddressInput");
@@ -2776,8 +2780,29 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       ).join("");
     }
 
-    function initEditAddressAutocomplete() {
-      initAddressAutocomplete("editAddressInput");
+    async function initEditAddressAutocomplete() {
+      const ok = await loadGooglePlacesScript();
+      if (!ok || !window.google?.maps?.places) return;
+      const input = $("editAddressInput");
+      if (!input) return;
+      if (_editAddressAutocomplete) {
+        window.google.maps.event.clearInstanceListeners(_editAddressAutocomplete);
+      }
+      _editAddressAutocomplete = new window.google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: "us" }
+      });
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && document.querySelector(".pac-container:not([style*='display: none'])")) {
+          e.preventDefault();
+        }
+      });
+      _editAddressAutocomplete.addListener("place_changed", () => {
+        const place = _editAddressAutocomplete.getPlace();
+        if (place?.formatted_address) {
+          input.value = place.formatted_address;
+        }
+      });
     }
 
     async function saveContractorEditor(id){
@@ -2887,6 +2912,7 @@ function applySavedAddress(){
 
     // ── New contractor address chips ─────────────────────────────
     let _newContractorAddresses = [];
+    let _newAddressAutocomplete = null;
 
     function addNewContractorAddress() {
       const input = $("newAddressInput");
@@ -2918,8 +2944,29 @@ function applySavedAddress(){
       ).join("");
     }
 
-    function initNewAddressAutocomplete() {
-      initAddressAutocomplete("newAddressInput");
+    async function initNewAddressAutocomplete() {
+      const ok = await loadGooglePlacesScript();
+      if (!ok || !window.google?.maps?.places) return;
+      const input = $("newAddressInput");
+      if (!input) return;
+      if (_newAddressAutocomplete) {
+        window.google.maps.event.clearInstanceListeners(_newAddressAutocomplete);
+      }
+      _newAddressAutocomplete = new window.google.maps.places.Autocomplete(input, {
+        types: ["address"],
+        componentRestrictions: { country: "us" }
+      });
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && document.querySelector(".pac-container:not([style*='display: none'])")) {
+          e.preventDefault();
+        }
+      });
+      _newAddressAutocomplete.addListener("place_changed", () => {
+        const place = _newAddressAutocomplete.getPlace();
+        if (place?.formatted_address) {
+          input.value = place.formatted_address;
+        }
+      });
     }
 
     async function createContractor(){
@@ -4260,119 +4307,93 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       }
     }
 
-    // ===== CUSTOM ADDRESS AUTOCOMPLETE (Places API via fetch — iOS compatible) =====
-    let _addrDebounceTimers = {};
-    let _addrSuggestionBoxes = {};
-    let _addrSessionTokens = {};
+    // ===== GOOGLE MAPS AUTOCOMPLETE (clean rewrite) =====
+    let _mapsReady = false;
+    let _mapsLoadPromise = null;
 
-    function _getSessionToken(inputId) {
-      if (!_addrSessionTokens[inputId]) {
-        _addrSessionTokens[inputId] = Math.random().toString(36).substring(2) + Date.now();
-      }
-      return _addrSessionTokens[inputId];
+    function loadGooglePlacesScript() {
+      if (!googleMapsApiKey) return Promise.resolve(false);
+      if (_mapsReady && window.google?.maps?.places) return Promise.resolve(true);
+      if (_mapsLoadPromise) return _mapsLoadPromise;
+
+      _mapsLoadPromise = new Promise((resolve) => {
+        if (window.google?.maps?.places) {
+          _mapsReady = true;
+          return resolve(true);
+        }
+
+        // Remove stale scripts
+        document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
+        _mapsReady = false;
+
+        const cbName = "_gmapsReady_" + Date.now();
+        window[cbName] = () => {
+          _mapsReady = true;
+          resolve(true);
+          delete window[cbName];
+        };
+
+        const s = document.createElement("script");
+        // Use legacy (non-async) load with explicit callback — most reliable for Autocomplete
+        s.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=${cbName}`;
+        s.defer = true;
+        s.onerror = () => {
+          console.error("Google Maps script failed to load");
+          _mapsLoadPromise = null;
+          resolve(false);
+        };
+        document.head.appendChild(s);
+      });
+
+      return _mapsLoadPromise;
     }
 
-    function _hideSuggestions(inputId) {
-      const box = _addrSuggestionBoxes[inputId];
-      if (box) box.style.display = "none";
-    }
+    async function initAddressAutocomplete(inputId, retries = 3) {
+      const input = document.getElementById(inputId);
+      if (!input) return;
+      // Don't re-attach if already ready and still visible
+      const rect = input.getBoundingClientRect();
+      const isVisible = rect.width > 0 && rect.height > 0;
+      if (input.dataset.acReady === "1" && isVisible) return;
 
-    function _showSuggestions(input, inputId, predictions) {
-      let box = _addrSuggestionBoxes[inputId];
-      if (!box) {
-        box = document.createElement("div");
-        box.className = "addr-suggestions";
-        box.id = "addr-sug-" + inputId;
-        document.body.appendChild(box);
-        _addrSuggestionBoxes[inputId] = box;
-      }
-
-      if (!predictions || predictions.length === 0) {
-        box.style.display = "none";
+      const ok = await loadGooglePlacesScript();
+      if (!ok || !window.google?.maps?.places) {
+        // Retry a few times in case Maps is still loading
+        if (retries > 0) {
+          setTimeout(() => initAddressAutocomplete(inputId, retries - 1), 800);
+        } else {
+          console.warn("Maps not ready for", inputId, "— giving up");
+        }
         return;
       }
 
-      // Position below the input
-      const rect = input.getBoundingClientRect();
-      box.style.left = rect.left + "px";
-      box.style.top = (rect.bottom + 4) + "px";
-      box.style.width = rect.width + "px";
-      box.style.display = "block";
-
-      box.innerHTML = "";
-      predictions.forEach(pred => {
-        const item = document.createElement("div");
-        item.className = "addr-suggestion-item";
-        const main = pred.structured_formatting?.main_text || pred.description.split(",")[0];
-        const sub = pred.structured_formatting?.secondary_text || pred.description.substring(main.length + 2);
-        item.innerHTML = `<div class="addr-suggestion-main">${main}</div><div class="addr-suggestion-sub">${sub}</div>`;
-        item.addEventListener("mousedown", (e) => {
-          e.preventDefault(); // Don't blur input
-          input.value = pred.description;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          _hideSuggestions(inputId);
-          _addrSessionTokens[inputId] = null; // reset token after selection
-        });
-        item.addEventListener("touchstart", (e) => {
-          e.preventDefault();
-          input.value = pred.description;
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-          _hideSuggestions(inputId);
-          _addrSessionTokens[inputId] = null;
-        }, { passive: false });
-        box.appendChild(item);
-      });
-    }
-
-    async function _fetchSuggestions(query, inputId) {
-      if (!googleMapsApiKey || !query || query.length < 3) return [];
       try {
-        const token = _getSessionToken(inputId);
-        const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(query)}&types=address&components=country:us&sessiontoken=${token}&key=${googleMapsApiKey}`;
-        // Use a server-side proxy to avoid CORS issues on iOS
-        const res = await fetch(`/places-autocomplete?input=${encodeURIComponent(query)}&sessiontoken=${token}`);
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.predictions || [];
-      } catch (e) {
-        console.warn("Places fetch failed:", e);
-        return [];
-      }
-    }
-
-    function initAddressAutocomplete(inputId) {
-      const input = document.getElementById(inputId);
-      if (!input || input.dataset.acReady === "1") return;
-      input.dataset.acReady = "1";
-
-      input.addEventListener("input", () => {
-        clearTimeout(_addrDebounceTimers[inputId]);
-        const val = input.value.trim();
-        if (val.length < 3) { _hideSuggestions(inputId); return; }
-        _addrDebounceTimers[inputId] = setTimeout(async () => {
-          const preds = await _fetchSuggestions(val, inputId);
-          _showSuggestions(input, inputId, preds);
-        }, 300);
-      });
-
-      input.addEventListener("blur", () => {
-        // Delay hide so tap on suggestion registers first
-        setTimeout(() => _hideSuggestions(inputId), 200);
-      });
-
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") _hideSuggestions(inputId);
-        if (e.key === "Enter") {
-          const box = _addrSuggestionBoxes[inputId];
-          if (box && box.style.display !== "none") {
+        const ac = new google.maps.places.Autocomplete(input, {
+          types: ["address"],
+          componentRestrictions: { country: "us" },
+          fields: ["formatted_address", "geometry"]
+        });
+        // Prevent Enter from submitting form
+        input.addEventListener("keydown", function(e) {
+          if (e.key === "Enter" && document.querySelector(".pac-container:not([style*='display: none'])")) {
             e.preventDefault();
-            const first = box.querySelector(".addr-suggestion-item");
-            if (first) first.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
           }
+        });
+        ac.addListener("place_changed", () => {
+          const place = ac.getPlace();
+          if (place?.formatted_address) {
+            input.value = place.formatted_address;
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        });
+        input.dataset.acReady = "1";
+        console.log("✅ Autocomplete attached:", inputId);
+      } catch (e) {
+        console.warn("Autocomplete init failed:", inputId, e);
+        if (retries > 0) {
+          setTimeout(() => initAddressAutocomplete(inputId, retries - 1), 800);
         }
-      });
-
-      console.log("✅ Custom autocomplete attached:", inputId);
+      }
     }
 
     function initVisibleAddressAutocompletes() {
@@ -5771,9 +5792,7 @@ async function saveScheduleCrew() {
     function fmtGeo(loc) {
       if (!loc || (!loc.lat && !loc.lng)) return "<span class='muted'>No GPS</span>";
       const acc = loc.accuracy ? ` ±${Math.round(loc.accuracy)}m` : "";
-      const label = loc.gpsAddress || (loc.lat && loc.lng ? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}` : "GPS");
-      if (!loc.mapsLink) return `<span style="color:#4CAF50;font-size:12px;">📍 ${label}${acc}</span>`;
-      return `<a href="${loc.mapsLink}" target="_blank" style="color:#4CAF50;font-size:12px;">📍 ${label}${acc}</a>`;
+      return `<a href="${loc.mapsLink}" target="_blank" style="color:#4CAF50;font-size:12px;">📍 ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}${acc}</a>`;
     }
 
     function renderWeeklyPayroll() {
@@ -5846,7 +5865,7 @@ async function saveScheduleCrew() {
                   <span style="color:${color};font-weight:600;">${e.actionLabel}</span>
                   ${e.employeeName ? `<span style="color:#aaa;font-size:12px;"> — ${e.employeeName}</span>` : ""}
                   ${e.serviceAddress ? `<div style="font-size:12px;color:#aaa;">${e.serviceAddress}</div>` : ""}
-                  <div style="font-size:12px;margin-top:2px;">${fmtGeo({lat:e.lat,lng:e.lng,accuracy:e.accuracy,mapsLink:e.mapsLink,gpsAddress:e.gpsAddress})}</div>
+                  <div style="font-size:12px;margin-top:2px;">${fmtGeo({lat:e.lat,lng:e.lng,accuracy:e.accuracy,mapsLink:e.mapsLink})}</div>
                 </div>
               </div>`;
           });
