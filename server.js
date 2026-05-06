@@ -357,6 +357,7 @@ await query(`
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS lunch_breaks JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS assigned_employee_ids JSONB DEFAULT '[]'::jsonb`);
+  await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS pin TEXT`);
   await query(`ALTER TABLE job_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
   await query(`ALTER TABLE estimate_services ADD COLUMN IF NOT EXISTS action_geo JSONB DEFAULT '{}'::jsonb`);
   await query(`CREATE TABLE IF NOT EXISTS route_events (id TEXT PRIMARY KEY, action TEXT, job_id TEXT, service_index INTEGER, employee_id TEXT, employee_name TEXT, service_address TEXT, formatted_address TEXT, latitude NUMERIC, longitude NUMERIC, accuracy NUMERIC, event_date TEXT, created_at TEXT)`);
@@ -458,7 +459,7 @@ db.inventory = inventoryRes.rows.map(i => {
   }));
 
   const employeesRes = await query(`SELECT * FROM employees ORDER BY active DESC, name`);
-  db.employees = employeesRes.rows.map(e => ({ id: numericIfPossible(e.id), name: e.name, active: e.active !== false, createdAt: e.created_at || null }));
+  db.employees = employeesRes.rows.map(e => ({ id: numericIfPossible(e.id), name: e.name, active: e.active !== false, createdAt: e.created_at || null, pin: e.pin || null }));
 
   const timeRes = await query(`SELECT * FROM time_clock_entries ORDER BY clock_in DESC`);
   db.timeClockEntries = timeRes.rows.map(t => ({ id: numericIfPossible(t.id), employeeId: t.employee_id ? numericIfPossible(t.employee_id) : null, name: t.employee_name, clockIn: t.clock_in, clockOut: t.clock_out, minutes: t.minutes === null ? null : Number(t.minutes), date: t.entry_date, clockInGeo: t.clock_in_geo || null, clockOutGeo: t.clock_out_geo || null }));
@@ -2683,7 +2684,10 @@ app.get("/invoice/:id", (req, res) => {
               <div class="brand">Swyft Demolition and Cleaning</div>
               <div>Invoice for Job #${job.id}</div>
             </div>
-            <div><strong>Date:</strong> ${job.serviceDate}</div>
+            <div style="display:flex;align-items:center;gap:16px;">
+              <div><strong>Date:</strong> ${job.serviceDate}</div>
+              <button onclick="window.history.length>1?window.history.back():window.close()" style="background:#f1f5f9;border:1px solid #cbd5e1;color:#334155;padding:8px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;">✕ Close</button>
+            </div>
           </div>
 
           <div class="box">
@@ -2923,8 +2927,9 @@ app.post("/employees", async (req, res) => {
     if (!employee.name) return res.status(400).json({ error: "Employee name is required" });
     db.employees ||= [];
     db.employees.push(employee);
-    await query(`INSERT INTO employees (id, name, active, created_at) VALUES ($1,$2,$3,$4)`,
-      [String(employee.id), employee.name, true, employee.createdAt]);
+    if (req.body.pin !== undefined) employee.pin = req.body.pin || null;
+    await query(`INSERT INTO employees (id, name, active, created_at, pin) VALUES ($1,$2,$3,$4,$5)`,
+      [String(employee.id), employee.name, true, employee.createdAt, employee.pin || null]);
     memoryDb = db;
     broadcastUpdate("employee_added", {});
     res.json(employee);
@@ -2939,7 +2944,8 @@ app.put("/employees/:id", async (req, res) => {
     if (req.body.name !== undefined) employee.name = cleanString(req.body.name);
     if (req.body.active !== undefined) employee.active = !!req.body.active;
     if (req.body.bio_credential !== undefined) employee.bio_credential = req.body.bio_credential || null;
-    await query(`UPDATE employees SET name=$1, active=$2, bio_credential=$3 WHERE id=$4`, [employee.name, employee.active, employee.bio_credential || null, String(employee.id)]);
+    if (req.body.pin !== undefined) employee.pin = req.body.pin || null;
+    await query(`UPDATE employees SET name=$1, active=$2, bio_credential=$3, pin=$4 WHERE id=$5`, [employee.name, employee.active, employee.bio_credential || null, employee.pin || null, String(employee.id)]);
     memoryDb = db;
     broadcastUpdate("employee_updated", {});
     res.json(employee);

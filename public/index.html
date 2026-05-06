@@ -246,7 +246,7 @@
 
     .status-finished{background:#ede9fe;color:#6d28d9}
 
-    .status-archived{background:#f1f5f9;color:#475569}
+    .status-archived{background:#fef3c7;color:#92400e}
 
     .service-card{
 
@@ -876,7 +876,7 @@
 
           <div class="quick-actions" style="margin-top:10px;">
 
-            <button class="secondary" onclick="openHistoryModal()">Archive / History</button>
+            <button class="secondary" onclick="openHistoryModal()">Standby / History</button>
 
             <div></div>
 
@@ -1125,7 +1125,7 @@
 
       <div class="topbar">
 
-        <h2>Archive / History</h2>
+        <h2>Standby / History</h2>
 
         <button class="secondary" style="width:auto;" onclick="closeHistoryModal()">Close</button>
 
@@ -3509,7 +3509,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
           <div class="quick-actions" style="margin-top:10px;">
 
-            <button class="secondary" onclick="archiveJob('${job.id}')">Archive Job</button>
+            <button class="secondary" onclick="archiveJob('${job.id}')">Standby</button>
 
             <button class="red" onclick="deleteJob('${job.id}')">Delete Job</button>
 
@@ -5096,7 +5096,18 @@ async function saveScheduleCrew() {
       const employee = crew.find(e => String(e.id) === String(employeeId));
       if (employee?.clockedIn) return alert((employee?.name || "Employee") + " is already clocked in");
 
-      // No PIN or biometric required - tap name to clock in
+      // PIN verification
+      const pin = prompt("Enter your PIN to clock in:");
+      if (pin === null) return; // cancelled
+      const empData = db.employees?.find(e => String(e.id) === String(employeeId));
+      if (!empData || !empData.pin) {
+        alert("No PIN set for this employee. Ask your manager to set one.");
+        return;
+      }
+      if (String(pin) !== String(empData.pin)) {
+        alert("Incorrect PIN. Try again.");
+        return;
+      }
 
       const res = await fetch("/time-clock/clock-in", {
         method:"POST",
@@ -5194,8 +5205,12 @@ async function saveScheduleCrew() {
         <div class="employee-admin-row">
           <strong>${e.name}</strong>
           <div class="row" style="margin-top:8px;">
-            <input id="employee-edit-${e.id}" value="${e.name}" />
+            <input id="employee-edit-${e.id}" value="${e.name}" placeholder="Name" />
             <button class="green" onclick="saveEmployeeName(${e.id})">Save</button>
+          </div>
+          <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+            <input id="employee-pin-${e.id}" value="${e.pin || ''}" placeholder="Set PIN (numbers)" type="password" inputmode="numeric" style="max-width:160px;" />
+            <button class="blue" onclick="saveEmployeePin(${e.id})">Set PIN</button>
           </div>
           <div class="row" style="margin-top:8px;">
             <button class="red" onclick="removeEmployee(${e.id})">Remove Employee</button>
@@ -5229,6 +5244,20 @@ async function saveScheduleCrew() {
       });
       await loadEmployees();
       renderEmployeeManagerList();
+    }
+
+    async function saveEmployeePin(id){
+      const pin = $(`employee-pin-${id}`)?.value.trim();
+      if (!pin) return alert("Enter a PIN");
+      if (!/^\d+$/.test(pin)) return alert("PIN must be numbers only");
+      await fetch(`/employees/${id}`, {
+        method:"PUT",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ pin })
+      });
+      await loadEmployees();
+      renderEmployeeManagerList();
+      alert("PIN saved ✅");
     }
 
     async function removeEmployee(id){
