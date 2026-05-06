@@ -3996,11 +3996,11 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
               <button class="blue" onclick="captureVanPhoto('${job.id}', 'before')">Take Before Picture</button>
 
-              <button class="secondary" onclick="uploadVanPhoto('${job.id}', 'before')">Upload Before Picture</button>
+              <button class="secondary" onclick="uploadVanPhoto('${job.id}', 'before')">📎 Upload Before</button>
 
               <button class="green" onclick="captureVanPhoto('${job.id}', 'after')">Take After Picture</button>
 
-              <button class="secondary" onclick="uploadVanPhoto('${job.id}', 'after')">Upload After Picture</button>
+              <button class="secondary" onclick="uploadVanPhoto('${job.id}', 'after')">📎 Upload After</button>
 
             </div>
 
@@ -4018,7 +4018,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
               </select>
 
-              <input id="photoFile-${job.id}" type="file" accept="image/*" />
+              <input id="photoFile-${job.id}" type="file" accept="image/*,video/*" />
 
             </div>
 
@@ -4038,19 +4038,19 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
               <div class="photo-grid">
 
-                ${beforePhotos.map(p => `
-
+                ${beforePhotos.map(p => {
+                  const isVideo = p.url && (p.url.includes("drive.google.com") || /\.(mp4|mov|avi|webm|hevc)/i.test(p.url));
+                  const thumb = isVideo
+                    ? `<div onclick="window.open('${p.url}','_blank')" style="width:140px;height:100px;background:#1a1a2e;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:2em;">▶️</div>`
+                    : `<img src="${p.url}" alt="before" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" style="cursor:pointer;" />`;
+                  return `
                   <div class="photo-card">
-
-                    <img src="${p.url}" alt="before" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" />
-
+                    ${thumb}
                     <div class="muted">${p.caption || ""}</div>
-
+                    ${p.url && p.url.includes("drive.google.com") ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:#7c83fd;">📁 View on Drive</a>` : ""}
                     ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto('${job.id}', '${p.id}')">Delete</button>` : ""}
-
-                  </div>
-
-                `).join("")}
+                  </div>`;
+                }).join("")}
 
               </div>
 
@@ -4068,25 +4068,41 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
               <div class="photo-grid">
 
-                ${afterPhotos.map(p => `
-
+                ${afterPhotos.map(p => {
+                  const isVideo = p.url && (p.url.includes("drive.google.com") || /\.(mp4|mov|avi|webm|hevc)/i.test(p.url));
+                  const thumb = isVideo
+                    ? `<div onclick="window.open('${p.url}','_blank')" style="width:140px;height:100px;background:#1a1a2e;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:2em;">▶️</div>`
+                    : `<img src="${p.url}" alt="after" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" style="cursor:pointer;" />`;
+                  return `
                   <div class="photo-card">
-
-                    <img src="${p.url}" alt="after" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" />
-
+                    ${thumb}
                     <div class="muted">${p.caption || ""}</div>
-
+                    ${p.url && p.url.includes("drive.google.com") ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:#7c83fd;">📁 View on Drive</a>` : ""}
                     ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto('${job.id}', '${p.id}')">Delete</button>` : ""}
-
-                  </div>
-
-                `).join("")}
+                  </div>`;
+                }).join("")}
 
               </div>
 
             ` : `<div class="muted">No after photos.</div>`}
 
           </div>
+
+
+
+          ${job.driveFolderId ? `
+
+            <div style="margin-top:12px;">
+
+              <a href="https://drive.google.com/drive/folders/${job.driveFolderId}" target="_blank" class="secondary" style="display:inline-block;padding:8px 16px;border-radius:8px;background:#23243a;color:#7c83fd;text-decoration:none;font-size:13px;">
+
+                📁 Open Full Job Folder on Drive
+
+              </a>
+
+            </div>
+
+          ` : ""}
 
         </div>
 
@@ -4627,19 +4643,28 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
     function uploadVanPhoto(jobId, tag){
       const input = document.createElement("input");
       input.type = "file";
-      input.accept = "image/*";
+      input.accept = "image/*,video/*";
       input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) return;
-        const fd = new FormData();
-        fd.append("photo", file);
-        fd.append("tag", tag);
-        fd.append("caption", "");
-        await fetch(`/jobs/${jobId}/photos`, {
-          method:"POST",
-          body: fd
-        });
-        await refreshAll(true);
+        const toast = document.createElement("div");
+        toast.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#23243a;color:#fff;padding:12px 24px;border-radius:12px;z-index:9999;font-size:14px;";
+        toast.innerText = file.type.startsWith("video") ? "⬆️ Uploading video to Drive..." : "⬆️ Uploading photo to Drive...";
+        document.body.appendChild(toast);
+        try {
+          const fd = new FormData();
+          fd.append("photo", file);
+          fd.append("tag", tag);
+          fd.append("caption", "");
+          const resp = await fetch(`/jobs/${jobId}/photos`, { method:"POST", body: fd });
+          const data = await resp.json();
+          toast.innerText = data.driveUrl ? "✅ Uploaded to Drive!" : "✅ Uploaded!";
+          setTimeout(() => toast.remove(), 2500);
+          await refreshAll(true);
+        } catch(e) {
+          toast.innerText = "❌ Upload failed";
+          setTimeout(() => toast.remove(), 3000);
+        }
       };
       input.click();
     }
