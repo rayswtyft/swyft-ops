@@ -4145,25 +4145,28 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       if (_mapsLoadPromise) return _mapsLoadPromise;
 
       _mapsLoadPromise = new Promise((resolve) => {
-        // If already loaded somehow, just use it
         if (window.google?.maps?.places) {
           _mapsReady = true;
           return resolve(true);
         }
 
-        // Remove any stale/broken Maps scripts
+        // Remove stale scripts
         document.querySelectorAll('script[src*="maps.googleapis.com"]').forEach(s => s.remove());
+        _mapsReady = false;
 
         const cbName = "_gmapsReady_" + Date.now();
         window[cbName] = () => {
           _mapsReady = true;
           resolve(true);
+          delete window[cbName];
         };
 
         const s = document.createElement("script");
-        s.src = "https://maps.googleapis.com/maps/api/js?key=" + googleMapsApiKey + "&libraries=places&v=weekly&callback=" + cbName;
-        s.async = true;
+        // Use legacy (non-async) load with explicit callback — most reliable for Autocomplete
+        s.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places&callback=${cbName}`;
+        s.defer = true;
         s.onerror = () => {
+          console.error("Google Maps script failed to load");
           _mapsLoadPromise = null;
           resolve(false);
         };
@@ -4176,7 +4179,10 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
     async function initAddressAutocomplete(inputId) {
       const input = document.getElementById(inputId);
       if (!input) return;
-      if (input.dataset.acReady === "1") return;
+      // Don't skip if already marked — always re-check visibility
+      const rect = input.getBoundingClientRect();
+      const isVisible = rect.width > 0 && rect.height > 0;
+      if (input.dataset.acReady === "1" && isVisible) return;
 
       const ok = await loadGooglePlacesScript();
       if (!ok || !window.google?.maps?.places) {
@@ -4185,26 +4191,26 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       }
 
       try {
-        // Use Autocomplete (legacy but stable)
         const ac = new google.maps.places.Autocomplete(input, {
           types: ["address"],
           componentRestrictions: { country: "us" },
           fields: ["formatted_address", "geometry"]
         });
-        // Prevent form submit on Enter key inside autocomplete
+        // Prevent Enter from submitting form
         input.addEventListener("keydown", function(e) {
-          if (e.key === "Enter") e.preventDefault();
+          if (e.key === "Enter" && document.querySelector(".pac-container:not([style*='display: none'])")) {
+            e.preventDefault();
+          }
         });
         ac.addListener("place_changed", () => {
           const place = ac.getPlace();
           if (place?.formatted_address) {
             input.value = place.formatted_address;
-            // Fire input event so any listeners know the value changed
             input.dispatchEvent(new Event("input", { bubbles: true }));
           }
         });
         input.dataset.acReady = "1";
-        console.log("✅ Autocomplete ready:", inputId);
+        console.log("✅ Autocomplete attached:", inputId);
       } catch (e) {
         console.warn("Autocomplete init failed:", inputId, e);
       }
@@ -4932,7 +4938,7 @@ async function saveScheduleCrew() {
 
     function closeJobModal(){
       $("jobModal").classList.add("hidden");
-      ["googleAddress","deliveryPickup","deliveryDropoff"].forEach(id => {
+      ["googleAddress","deliveryPickup","deliveryDropoff","editAddress","estimateAddress","recurringAddress","billingAddress"].forEach(id => {
         const el = document.getElementById(id);
         if (el) delete el.dataset.acReady;
       });
