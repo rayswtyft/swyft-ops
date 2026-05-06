@@ -3141,10 +3141,15 @@ ${s.category === "Junk" && currentMode === "van" ? `
       }));
       svc.trenches = trenches;
       svc.linearFeet = trenches.reduce((s,t) => s + Number(t.lengthFt||0), 0);
+      // Billing: $8 per linear foot for concrete cutting
+      const CONCRETE_CUTTING_RATE = 8;
+      svc.total = Number((svc.linearFeet * CONCRETE_CUTTING_RATE).toFixed(2));
+      // Recompute job total
+      job.totalCost = job.services.reduce((sum, sv) => sum + (sv.total || 0), 0);
       await fetch(`/jobs/${jobId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ services: job.services })
+        body: JSON.stringify({ services: job.services, totalCost: job.totalCost })
       });
       await refreshAll();
     }
@@ -3681,30 +3686,47 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
 
 
-            ${s.subtype === "Concrete cutting" && s.startTime && !s.endTime ? `
-              <div style="margin-top:10px; background:#f9f9f9; border-radius:10px; padding:10px;">
-                <div style="font-size:13px; font-weight:600; margin-bottom:8px;">📏 Log Trenches</div>
-                <div id="vanTrenchList-${job.id}-${i}">
-                  ${(s.trenches||[]).map((t,ti) => `
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:5px; margin-bottom:6px; align-items:end;">
-                      <div>
-                        <div style="font-size:11px; color:#888;">Length (ft)</div>
-                        <input type="number" min="0" step="0.5" value="${t.lengthFt||''}" placeholder="0" id="vanTL-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+            ${s.subtype === "Concrete cutting" ? `
+              <div style="margin-top:10px;">
+                <!-- Start/Stop timer for concrete cutting -->
+                ${!s.startTime ? `
+                  <button class="green" onclick="serviceAction('/jobs/${job.id}/services/${i}/start')" style="margin-bottom:10px;">▶ Start Timer</button>
+                ` : s.startTime && !s.endTime ? `
+                  <button class="red" onclick="serviceAction('/jobs/${job.id}/services/${i}/stop')" style="margin-bottom:10px;">■ Stop Timer</button>
+                ` : `
+                  <div style="font-size:13px; color:#27ae60; font-weight:600; margin-bottom:8px;">✓ Timer done · ${s.hoursWorked ? s.hoursWorked.toFixed(1)+'h' : ''}</div>
+                `}
+                <!-- Trench logger — always visible -->
+                <div style="background:#f9f9f9; border-radius:10px; padding:10px;">
+                  <div style="font-size:13px; font-weight:600; margin-bottom:8px;">📏 Trenches</div>
+                  <div id="vanTrenchList-${job.id}-${i}">
+                    ${(s.trenches||[]).map((t,ti) => `
+                      <div style="display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:5px; margin-bottom:6px; align-items:end;">
+                        <div>
+                          <div style="font-size:11px; color:#888;">Length (ft)</div>
+                          <input type="number" min="0" step="0.5" value="${t.lengthFt||''}" placeholder="0" id="vanTL-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+                        </div>
+                        <div>
+                          <div style="font-size:11px; color:#888;">Width (in)</div>
+                          <input type="number" min="0" step="1" value="${t.widthIn||''}" placeholder="0" id="vanTW-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+                        </div>
+                        <div>
+                          <div style="font-size:11px; color:#888;">Depth (in)</div>
+                          <input type="number" min="0" step="1" value="${t.depthIn||''}" placeholder="0" id="vanTD-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
+                        </div>
+                        <button onclick="vanRemoveTrench('${job.id}',${i},${ti})" style="background:#eee;border:none;border-radius:6px;padding:6px 8px;font-size:14px;cursor:pointer;">✕</button>
                       </div>
-                      <div>
-                        <div style="font-size:11px; color:#888;">Width (in)</div>
-                        <input type="number" min="0" step="1" value="${t.widthIn||''}" placeholder="0" id="vanTW-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
-                      </div>
-                      <div>
-                        <div style="font-size:11px; color:#888;">Depth (in)</div>
-                        <input type="number" min="0" step="1" value="${t.depthIn||''}" placeholder="0" id="vanTD-${job.id}-${i}-${ti}" style="width:100%; font-size:16px;" />
-                      </div>
-                      <button onclick="vanRemoveTrench('${job.id}',${i},${ti})" style="background:#eee;border:none;border-radius:6px;padding:6px 8px;font-size:14px;cursor:pointer;">✕</button>
+                    `).join("")}
+                  </div>
+                  <button onclick="vanAddTrench('${job.id}',${i})" style="background:#e8f0fe;color:#1a56db;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;">+ Add Trench</button>
+                  <button onclick="vanSaveTrenches('${job.id}',${i})" style="background:#1a56db;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;margin-left:8px;">Save</button>
+                  ${(s.trenches||[]).length > 0 ? `
+                    <div style="margin-top:8px; font-size:13px; background:#f0fff4; border-radius:8px; padding:8px 10px;">
+                      <div>Total: <strong>${(s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)} linear ft</strong></div>
+                      <div style="color:#27ae60; font-weight:700;">Billed: $${((s.trenches||[]).reduce((sum,t)=>sum+Number(t.lengthFt||0),0)*8).toFixed(2)}</div>
                     </div>
-                  `).join("")}
+                  ` : ""}
                 </div>
-                <button onclick="vanAddTrench('${job.id}',${i})" style="background:#e8f0fe;color:#1a56db;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;">+ Add Trench</button>
-                <button onclick="vanSaveTrenches('${job.id}',${i})" style="background:#1a56db;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;margin-left:8px;">Save Trenches</button>
               </div>
             ` : ""}
 
