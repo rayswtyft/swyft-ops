@@ -2780,8 +2780,9 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       ).join("");
     }
 
-    function initEditAddressAutocomplete() {
-      if (!window.google?.maps?.places) return;
+    async function initEditAddressAutocomplete() {
+      const ok = await loadGooglePlacesScript();
+      if (!ok || !window.google?.maps?.places) return;
       const input = $("editAddressInput");
       if (!input) return;
       if (_editAddressAutocomplete) {
@@ -2790,6 +2791,11 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       _editAddressAutocomplete = new window.google.maps.places.Autocomplete(input, {
         types: ["address"],
         componentRestrictions: { country: "us" }
+      });
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && document.querySelector(".pac-container:not([style*='display: none'])")) {
+          e.preventDefault();
+        }
       });
       _editAddressAutocomplete.addListener("place_changed", () => {
         const place = _editAddressAutocomplete.getPlace();
@@ -2938,8 +2944,9 @@ function applySavedAddress(){
       ).join("");
     }
 
-    function initNewAddressAutocomplete() {
-      if (!window.google?.maps?.places) return;
+    async function initNewAddressAutocomplete() {
+      const ok = await loadGooglePlacesScript();
+      if (!ok || !window.google?.maps?.places) return;
       const input = $("newAddressInput");
       if (!input) return;
       if (_newAddressAutocomplete) {
@@ -2948,6 +2955,11 @@ function applySavedAddress(){
       _newAddressAutocomplete = new window.google.maps.places.Autocomplete(input, {
         types: ["address"],
         componentRestrictions: { country: "us" }
+      });
+      input.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && document.querySelector(".pac-container:not([style*='display: none'])")) {
+          e.preventDefault();
+        }
       });
       _newAddressAutocomplete.addListener("place_changed", () => {
         const place = _newAddressAutocomplete.getPlace();
