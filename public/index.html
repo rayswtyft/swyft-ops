@@ -2309,13 +2309,18 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
     async function saveInventoryAndStay() {
       const btn = document.getElementById("invSaveBtn");
       if (btn) { btn.innerText = "Saving..."; btn.disabled = true; }
-      await saveAllInventoryEdits();
-      if (btn) { btn.innerText = "✅ Saved!"; btn.disabled = false; }
-      setTimeout(() => { if (btn) btn.innerText = "💾 Save"; }, 1500);
-      // Keep edit mode paused — user is still editing
+      try {
+        await saveAllInventoryEdits();
+        if (btn) { btn.innerText = "✅ Saved!"; btn.disabled = false; }
+        setTimeout(() => { if (btn) btn.innerText = "💾 Save"; }, 2000);
+      } catch(e) {
+        if (btn) { btn.innerText = "❌ Save Failed"; btn.disabled = false; btn.style.background = "#dc2626"; }
+        setTimeout(() => { if (btn) { btn.innerText = "💾 Save"; btn.style.background = ""; } }, 3000);
+      }
     }
 
     async function saveAllInventoryEdits() {
+      let failCount = 0;
       const saves = inventory.map(async item => {
         const nameEl = document.getElementById("inv-name-"+item.id);
         if (!nameEl) return;
@@ -2326,25 +2331,44 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
         const stock = {};
         ["van","truck","warehouse"].forEach(loc => {
           const el = document.getElementById("inv-stock-"+loc+"-"+item.id);
-          if (el) stock[loc] = el.value === "" ? null : Number(el.value);
+          if (el) {
+            // Only update locations that have an input rendered — don't wipe others
+            stock[loc] = el.value === "" ? null : Number(el.value);
+          } else {
+            // Preserve existing value if input not in DOM (e.g. filtered tab view)
+            stock[loc] = (item.stock && item.stock[loc] !== undefined) ? item.stock[loc] : null;
+          }
         });
         const totalQty = Object.values(stock).filter(v => v !== null).reduce((a,b) => a+b, 0);
-        await fetch("/inventory/"+item.id, {
-          method: "PUT",
-          headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({
-            name: nameEl.value.trim() || item.name,
-            category: catEl?.value || item.category || "supply",
-            item_type: typeEl?.value || item.item_type || "consumable",
-            unit: unitEl?.value.trim() || item.unit,
-            reorderPoint: reorderEl?.value === "" ? null : Number(reorderEl?.value),
-            stock,
-            quantity: totalQty,
-            active: true
-          })
-        });
+        try {
+          const res = await fetch("/inventory/"+item.id, {
+            method: "PUT",
+            headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({
+              name: nameEl.value.trim() || item.name,
+              category: catEl?.value || item.category || "supply",
+              item_type: typeEl?.value || item.item_type || "consumable",
+              unit: unitEl?.value.trim() || item.unit,
+              reorderPoint: reorderEl?.value === "" ? null : Number(reorderEl?.value),
+              stock,
+              quantity: totalQty,
+              active: true
+            })
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error("Failed to save item", item.name, err);
+            failCount++;
+          }
+        } catch (e) {
+          console.error("Network error saving item", item.name, e);
+          failCount++;
+        }
       });
       await Promise.all(saves);
+      if (failCount > 0) {
+        alert("Warning: " + failCount + " item(s) failed to save. Please check your connection and try again.");
+      }
       await loadInventory();
       renderInventoryModalList();
     }
