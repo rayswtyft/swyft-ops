@@ -323,7 +323,11 @@ function serviceRowToObject(s) {
 async function migrateDatabase() {
   await query(`CREATE TABLE IF NOT EXISTS contractors (id TEXT PRIMARY KEY, company_name TEXT, contact_name TEXT, email TEXT, phone TEXT, billing_address TEXT, payment_terms TEXT, created_at TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS contractor_addresses (id SERIAL PRIMARY KEY, contractor_id TEXT REFERENCES contractors(id) ON DELETE CASCADE, address TEXT)`);
-  await query(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, service_date TEXT, notes TEXT, created_at TEXT, sort_order INTEGER DEFAULT 0, deleted_at TEXT, archived_at TEXT, finished_at TEXT, quickbooks_status TEXT DEFAULT 'not_sent', quickbooks_invoice_id TEXT, from_estimate_id TEXT, open_status TEXT DEFAULT 'single_day')`);
+  await query(`CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, service_date TEXT, notes TEXT, created_at TEXT, sort_order INTEGER DEFAULT 0, deleted_at TEXT, archived_at TEXT, finished_at TEXT, quickbooks_status TEXT DEFAULT 'not_sent', quickbooks_invoice_id TEXT, from_estimate_id TEXT, open_status TEXT DEFAULT 'single_day', job_type TEXT DEFAULT 'regular', pickup_address TEXT, dropoff_address TEXT)`);
+  // Migrations for existing DBs
+  try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS job_type TEXT DEFAULT 'regular'`); } catch(e) {}
+  try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS pickup_address TEXT`); } catch(e) {}
+  try { await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS dropoff_address TEXT`); } catch(e) {}
   await query(`CREATE TABLE IF NOT EXISTS job_services (id SERIAL PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, service_index INTEGER DEFAULT 0, category TEXT, subtype TEXT, crew_size NUMERIC, hours_manual NUMERIC, linear_feet NUMERIC, junk_load TEXT, junk_price NUMERIC, service_date TEXT, on_my_way_time TEXT, arrived_time TEXT, start_time TEXT, end_time TEXT, materials_used JSONB DEFAULT '{}'::jsonb, inventory_deducted_at TEXT, action_geo JSONB DEFAULT '{}'::jsonb)`);
   await query(`CREATE TABLE IF NOT EXISTS job_photos (id TEXT PRIMARY KEY, job_id TEXT REFERENCES jobs(id) ON DELETE CASCADE, url TEXT, tag TEXT, caption TEXT, created_at TEXT)`);
   await query(`CREATE TABLE IF NOT EXISTS estimates (id TEXT PRIMARY KEY, contractor_id TEXT, service_address TEXT, notes TEXT, status TEXT DEFAULT 'open', created_at TEXT, converted_job_id TEXT)`);
@@ -415,6 +419,9 @@ db.inventory = inventoryRes.rows.map(i => {
     id: numericIfPossible(j.id),
     contractorId: j.contractor_id,
     serviceAddress: j.service_address || "",
+    jobType: j.job_type || "regular",
+    pickupAddress: j.pickup_address || null,
+    dropoffAddress: j.dropoff_address || null,
     serviceDate: j.service_date || todayString(),
     notes: j.notes || "",
     createdAt: j.created_at || null,
@@ -574,10 +581,10 @@ async function upsertJob(client_or_query_fn, job) {
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS job_services_job_service_idx ON job_services(job_id, service_index)`).catch(() => {});
 
   await q(
-    `INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-     ON CONFLICT (id) DO UPDATE SET contractor_id=$2, service_address=$3, service_date=$4, notes=$5, sort_order=$7, deleted_at=$8, archived_at=$9, finished_at=$10, quickbooks_status=$11, quickbooks_invoice_id=$12, from_estimate_id=$13, open_status=$14`,
-    [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day"]
+    `INSERT INTO jobs (id, contractor_id, service_address, service_date, notes, created_at, sort_order, deleted_at, archived_at, finished_at, quickbooks_status, quickbooks_invoice_id, from_estimate_id, open_status, job_type, pickup_address, dropoff_address)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+     ON CONFLICT (id) DO UPDATE SET contractor_id=$2, service_address=$3, service_date=$4, notes=$5, sort_order=$7, deleted_at=$8, archived_at=$9, finished_at=$10, quickbooks_status=$11, quickbooks_invoice_id=$12, from_estimate_id=$13, open_status=$14, job_type=$15, pickup_address=$16, dropoff_address=$17`,
+    [String(job.id), job.contractorId == null ? null : String(job.contractorId), job.serviceAddress || "", job.serviceDate || todayString(), job.notes || "", job.createdAt || new Date().toISOString(), Number(job.sortOrder || 0), job.deletedAt || null, job.archivedAt || null, job.finishedAt || null, job.quickbooksStatus || "not_sent", job.quickbooksInvoiceId || null, job.fromEstimateId == null ? null : String(job.fromEstimateId), job.openStatus || "single_day", job.jobType || "regular", job.pickupAddress || null, job.dropoffAddress || null]
   );
 
   // Upsert each service row — no delete needed
@@ -1827,6 +1834,9 @@ app.post("/jobs", async (req, res) => {
       id: uuidv4(),
       contractorId: String(req.body.contractorId || ""),
       serviceAddress: cleanString(req.body.serviceAddress),
+      jobType: req.body.jobType || "regular",
+      pickupAddress: cleanString(req.body.pickupAddress) || null,
+      dropoffAddress: cleanString(req.body.dropoffAddress) || null,
       serviceDate,
       notes: cleanString(req.body.notes),
       createdAt: new Date().toISOString(),
@@ -1986,6 +1996,28 @@ app.post("/jobs/:id/arrived", async (req, res) => {
   } catch (err) {
     console.error("Arrived error:", err);
     res.status(500).json({ error: "Could not update job: " + err.message });
+  }
+});
+
+app.post("/jobs/:id/finish", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    const now = new Date().toISOString();
+    job.finishedAt = now;
+    job.status = "finished";
+    for (const service of job.services || []) {
+      if (!service.endTime) service.endTime = now;
+    }
+    recordRouteEvent(db, { action: "finished", jobId: job.id, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
+    await upsertJob(query, job);
+    memoryDb = db;
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Finish error:", err);
+    res.status(500).json({ error: "Could not finish job: " + err.message });
   }
 });
 
