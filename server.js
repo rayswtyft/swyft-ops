@@ -3079,6 +3079,19 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, time: new Date().toISOString() });
 });
 
+// Force reload inventory (and full DB) from Postgres — use after running sync scripts
+app.post("/admin/reload-db", async (req, res) => {
+  try {
+    const loaded = await loadDbFromPostgres();
+    memoryDb = normalizeDbShape(loaded);
+    console.log("🔄 DB reloaded from Postgres via /admin/reload-db");
+    res.json({ ok: true, inventoryCount: memoryDb.inventory?.length || 0, message: "DB reloaded from Postgres" });
+  } catch (err) {
+    console.error("Reload DB error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 initializeDatabaseBackedState()
   .then(() => {
     server.listen(PORT, "0.0.0.0", () => {

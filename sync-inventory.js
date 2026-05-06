@@ -146,6 +146,22 @@ async function run() {
       );
     }
     console.log(`✅ Synced ${items.length} inventory items successfully`);
+
+    // Tell the live server to reload from Postgres
+    const APP_URL = process.env.APP_URL || "https://swyft-ops-1.onrender.com";
+    try {
+      const http = require("https");
+      await new Promise((resolve) => {
+        const req = http.request(APP_URL + "/admin/reload-db", { method: "POST", headers: { "Content-Type": "application/json" } }, (res) => {
+          let body = "";
+          res.on("data", d => body += d);
+          res.on("end", () => { console.log("🔄 Server DB reloaded:", body); resolve(); });
+        });
+        req.on("error", (e) => { console.warn("⚠️  Could not ping reload endpoint:", e.message); resolve(); });
+        req.end();
+      });
+    } catch(e) { console.warn("⚠️  Reload ping failed:", e.message); }
+
   } finally {
     client.release();
     await pool.end();
