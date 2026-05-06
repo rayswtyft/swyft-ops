@@ -1043,15 +1043,38 @@ function buildEnhancedChecklist(date, db) {
     const invItem = db.inventory.find(i => i.active !== false &&
       i.name.toLowerCase() === itemName.toLowerCase());
     const itemType = invItem?.item_type || (invItem && ["tool","equipment"].includes(invItem.category) ? "tool" : "consumable");
-    const locations = invItem?.stock ? Object.entries(invItem.stock).filter(([,v]) => v !== null && v > 0).map(([loc]) => loc) : [invItem?.location || "van"];
-    const isWarehouseOnly = locations.every(l => l === "warehouse") || (locations.some(l => l === "warehouse") && !locations.some(l => l === "van" || l === "truck"));
-    const needsLoading = isWarehouseOnly; // both consumables and tools from warehouse need to be fetched
+
+    // ── Live van stock check ──────────────────────────────────────────────
+    // Use actual van quantity to decide which section an item falls under.
+    // stock.van > 0  → item is in the van already
+    // stock.van == 0 or missing → needs to be grabbed from warehouse/truck
+    const stock = invItem?.stock || {};
+    const vanQty = stock.van != null ? Number(stock.van) : null;
+    const truckQty = stock.truck != null ? Number(stock.truck) : null;
+    const warehouseQty = stock.warehouse != null ? Number(stock.warehouse) : null;
+
+    // For tools: if any van stock exists, consider it stocked in van
+    // For consumables: if van qty > 0, it's in van; if 0 or null, get from warehouse
+    const hasVanStock = (vanQty !== null && vanQty > 0) || (truckQty !== null && truckQty > 0);
+
+    // needsLoading = must be retrieved before the job (no van/truck stock)
+    const needsLoading = !hasVanStock;
+
+    // Where to pull it from if it needs loading
+    const pullFrom = (warehouseQty != null && warehouseQty > 0) ? "warehouse"
+                   : (vanQty != null && vanQty === 0 && warehouseQty != null && warehouseQty === 0) ? "restock_needed"
+                   : "warehouse";
+
+    const locations = Object.entries(stock).filter(([,v]) => v !== null && v > 0).map(([loc]) => loc);
 
     return {
       item: itemName,
       item_type: itemType,
       locations,
       needsLoading,
+      pullFrom,
+      vanQty,
+      warehouseQty,
       inventoryId: invItem?.id || null,
       unit: invItem?.unit || null,
       morning_checked: !!morningState[itemName],

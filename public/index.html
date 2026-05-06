@@ -1954,27 +1954,28 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       if (!el) return;
 
       if (checklistTab === "morning") {
-        // Morning: van tools = confirm in van, warehouse tools/consumables = bring from warehouse
-        const vanTools = items.filter(i => i.item_type === "tool" && !i.needsLoading);
-        const warehouseItems = items.filter(i => i.needsLoading);
-        const warehouseTools = warehouseItems.filter(i => i.item_type === "tool");
-        const warehouseSupplies = warehouseItems.filter(i => i.item_type !== "tool");
-        const vanSupplies = items.filter(i => i.item_type !== "tool" && !i.needsLoading);
+        // Morning: dynamically split based on LIVE van stock qty
+        // If van qty > 0 → confirm it's in the van
+        // If van qty == 0 or null → must grab from warehouse
+        const inVanTools     = items.filter(i => i.item_type === "tool"  && !i.needsLoading);
+        const inVanSupplies  = items.filter(i => i.item_type !== "tool"  && !i.needsLoading);
+        const fromWhTools    = items.filter(i => i.item_type === "tool"  && i.needsLoading);
+        const fromWhSupplies = items.filter(i => i.item_type !== "tool"  && i.needsLoading);
 
         let html = "";
 
-        if (vanTools.length) {
-          html += '<div style="font-weight:700;margin:10px 0 6px;font-size:13px;color:#475569;">🔧 TOOLS — confirm in van</div>';
-          html += vanTools.map(item => renderMorningItem(date, item)).join("");
+        if (inVanTools.length) {
+          html += '<div style="font-weight:700;margin:10px 0 4px;font-size:13px;color:#1e3a5f;background:#dbeafe;padding:6px 10px;border-radius:6px;">✅ TOOLS IN VAN — confirm before leaving</div>';
+          html += inVanTools.map(item => renderMorningItem(date, item)).join("");
         }
-        if (warehouseTools.length || warehouseSupplies.length) {
-          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#b45309;">📦 BRING FROM WAREHOUSE</div>';
-          html += warehouseTools.map(item => renderMorningItem(date, item, true)).join("");
-          html += warehouseSupplies.map(item => renderMorningItem(date, item, true)).join("");
+        if (inVanSupplies.length) {
+          html += '<div style="font-weight:700;margin:14px 0 4px;font-size:13px;color:#1e3a5f;background:#dbeafe;padding:6px 10px;border-radius:6px;">✅ SUPPLIES IN VAN — confirm stocked</div>';
+          html += inVanSupplies.map(item => renderMorningItem(date, item)).join("");
         }
-        if (vanSupplies.length) {
-          html += '<div style="font-weight:700;margin:14px 0 6px;font-size:13px;color:#475569;">🧴 SUPPLIES — confirm in van</div>';
-          html += vanSupplies.map(item => renderMorningItem(date, item)).join("");
+        if (fromWhTools.length || fromWhSupplies.length) {
+          html += '<div style="font-weight:700;margin:14px 0 4px;font-size:13px;color:#92400e;background:#fef3c7;padding:6px 10px;border-radius:6px;">📦 GET FROM WAREHOUSE — not in van</div>';
+          html += fromWhTools.map(item => renderMorningItem(date, item, true)).join("");
+          html += fromWhSupplies.map(item => renderMorningItem(date, item, true)).join("");
         }
         el.innerHTML = html;
       } else {
@@ -2005,11 +2006,19 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
       const checked = item.morning_checked;
       const borderColor = needsLoad ? "#f59e0b" : (checked ? "#16a34a" : "#e2e8f0");
       const safeItem = item.item.replace(/&/g,"&amp;").replace(/"/g,"&quot;");
+      // Show live van quantity as a subtle badge
+      const qtyBadge = (item.vanQty != null)
+        ? `<span style="font-size:11px;background:#f1f5f9;color:#64748b;padding:2px 6px;border-radius:8px;min-width:32px;text-align:center;">${item.vanQty}${item.unit ? " " + item.unit : ""}</span>`
+        : "";
+      const loadBadge = needsLoad
+        ? `<span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 6px;border-radius:8px;">get from warehouse</span>`
+        : "";
       return `<div class="check-row ${checked?"checked":""}" style="border:1px solid ${borderColor};border-radius:8px;margin-bottom:6px;display:flex;align-items:center;gap:10px;padding:10px;cursor:pointer;"
         data-date="${date}" data-item="${safeItem}" data-checked="${checked}" onclick="handleChecklistTap(this,'morning')">
         <input type="checkbox" ${checked?"checked":""} style="width:20px;height:20px;pointer-events:none;" />
-        <span style="flex:1;">${needsLoad?"🚚 ":""}${item.item}</span>
-        ${needsLoad?'<span style="font-size:11px;background:#fef3c7;color:#b45309;padding:2px 6px;border-radius:8px;">needs loading</span>':""}
+        <span style="flex:1;">${item.item}</span>
+        ${qtyBadge}
+        ${loadBadge}
       </div>`;
     }
 
