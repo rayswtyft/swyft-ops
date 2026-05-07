@@ -5,6 +5,9 @@ const path = require("path");
 const fs = require("fs");
 const http = require("http");
 const multer = require("multer");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 const PDFDocument = require("pdfkit");
 const archiver = require("archiver");
 const axios = require("axios");
@@ -2656,6 +2659,20 @@ app.post("/jobs/:id/services/:index/stop", async (req, res) => {
 
 /* ---------- PHOTOS ---------- */
 
+
+// Convert MOV/HEVC video to MP4 using FFmpeg
+function convertToMp4(inputPath) {
+  return new Promise((resolve, reject) => {
+    const outputPath = inputPath.replace(/\.[^.]+$/, "") + "_converted.mp4";
+    ffmpeg(inputPath)
+      .outputOptions(["-c:v libx264", "-c:a aac", "-movflags faststart", "-preset fast", "-crf 23"])
+      .output(outputPath)
+      .on("end", () => resolve(outputPath))
+      .on("error", (err) => reject(err))
+      .run();
+  });
+}
+
 app.post("/jobs/:id/photos", upload.single("photo"), async (req, res) => {
   const db = readDb();
   const job = db.jobs.find(j => String(j.id) === String(req.params.id));
@@ -2680,24 +2697,48 @@ app.post("/jobs/:id/photos", upload.single("photo"), async (req, res) => {
     const token = await getValidDriveToken();
     if (token) {
       const jobFolderId = await getOrCreateJobDriveFolder(job, token);
-      // Find the right subfolder (Before / After / Other)
       const subName = tag === "before" ? "Before" : tag === "after" ? "After" : "Other";
-      // List subfolders to find the right one
       const subRes = await axios.get(
         `https://www.googleapis.com/drive/v3/files?q='${jobFolderId}'+in+parents+and+mimeType='application/vnd.google-apps.folder'+and+name='${subName}'+and+trashed=false&fields=files(id,name)`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const subFolderId = subRes.data.files?.[0]?.id || jobFolderId;
-      // Upload file to Drive
+
       const ts = new Date().toISOString().replace(/[:.]/g,"-").slice(0,19);
-      const ext = req.file.originalname.split(".").pop() || (req.file.mimetype.includes("video") ? "mp4" : "jpg");
+      const isVideo = req.file.mimetype.includes("video") || /\.(mov|mp4|m4v|hevc|avi|mkv)$/i.test(req.file.originalname);
+      const isMov = /\.(mov|m4v|hevc)$/i.test(req.file.originalname) || req.file.mimetype === "video/quicktime";
+
+      let uploadPath = req.file.path;
+      let uploadMime = req.file.mimetype;
+      let convertedPath = null;
+
+      // Convert MOV/QuickTime to MP4 for browser compatibility
+      if (isMov && req.file.path) {
+        try {
+          console.log("🎬 Converting MOV to MP4...");
+          convertedPath = await convertToMp4(req.file.path);
+          uploadPath = convertedPath;
+          uploadMime = "video/mp4";
+          console.log("✅ Conversion done:", convertedPath);
+        } catch(convErr) {
+          console.error("Video conversion failed, uploading original:", convErr.message);
+        }
+      }
+
+      const ext = isMov ? "mp4" : (req.file.originalname.split(".").pop() || (isVideo ? "mp4" : "jpg"));
       const filename = `${ts}_${tag}.${ext}`;
-      const driveFile = await driveUploadFile(req.file.buffer || require("fs").readFileSync(req.file.path), filename, req.file.mimetype, subFolderId, token);
+      const fileBuffer = require("fs").readFileSync(uploadPath);
+      const driveFile = await driveUploadFile(fileBuffer, filename, uploadMime, subFolderId, token);
       await driveSetPublic(driveFile.id, token);
       photo.driveUrl = driveFile.webViewLink || driveFile.webContentLink || null;
       photo.driveFileId = driveFile.id;
-      photo.url = photo.driveUrl || photo.url; // prefer Drive URL
+      photo.url = photo.driveUrl || photo.url;
       console.log("✅ Drive upload:", filename, driveFile.id);
+
+      // Clean up converted temp file
+      if (convertedPath) {
+        require("fs").unlink(convertedPath, () => {});
+      }
     }
   } catch(driveErr) {
     console.error("Drive upload failed (falling back to local):", driveErr.message);
