@@ -1150,6 +1150,38 @@
 
 
 
+  <!-- Reschedule Job Modal -->
+  <div id="rescheduleModal" class="modal hidden">
+    <div class="modal-content" style="max-width:380px;">
+      <h2>Reschedule Job</h2>
+      <p id="rescheduleJobLabel" style="color:#555;font-size:14px;margin-bottom:16px;"></p>
+      <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <button class="blue" style="flex:1;" onclick="rescheduleToTomorrow()">📅 Tomorrow</button>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="font-size:13px;color:#555;font-weight:600;">Pick a different date</label>
+        <input type="date" id="rescheduleDate" style="width:100%;margin-top:6px;font-size:16px;padding:8px;border:1px solid #d1d5db;border-radius:8px;box-sizing:border-box;" />
+      </div>
+      <div class="row">
+        <button class="secondary" onclick="closeRescheduleModal()">Cancel</button>
+        <button class="green" onclick="confirmReschedule()">Move Job</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Finish Confirmation Modal (van side) -->
+  <div id="finishConfirmModal" class="modal hidden">
+    <div class="modal-content" style="max-width:340px;text-align:center;">
+      <div style="font-size:48px;margin-bottom:12px;">🏁</div>
+      <h2 style="margin-bottom:8px;">Did you finish the job?</h2>
+      <p style="color:#555;font-size:14px;margin-bottom:20px;" id="finishConfirmJobLabel"></p>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="green" style="font-size:16px;padding:14px;" onclick="confirmFinishFromPrompt()">✅ Yes, Job is Done</button>
+        <button class="secondary" style="font-size:15px;padding:12px;" onclick="closeFinishConfirmModal()">No, Still Working</button>
+      </div>
+    </div>
+  </div>
+
   <div id="finishDayModal" class="modal hidden">
 
     <div class="modal-content">
@@ -3669,6 +3701,8 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
             <button class="secondary" onclick="archiveJob('${job.id}')">Standby</button>
 
+            <button class="orange" onclick="openRescheduleModal('${job.id}')">📅 Reschedule</button>
+
             <button class="red" onclick="deleteJob('${job.id}')">Delete Job</button>
 
           </div>
@@ -4861,6 +4895,131 @@ async function saveScheduleCrew() {
   await refreshAll(true);
 }
 
+
+    // ─── Reschedule Job ───────────────────────────────────────────────
+    let rescheduleJobId = null;
+
+    function openRescheduleModal(jobId) {
+      rescheduleJobId = jobId;
+      const job = jobs.find(j => j.id === jobId);
+      const label = job ? (job.serviceAddress || job.contractorName || "this job") : "this job";
+      document.getElementById("rescheduleJobLabel").textContent = label;
+      // Set date input min to tomorrow
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split("T")[0];
+      const dateInput = document.getElementById("rescheduleDate");
+      dateInput.min = tomorrowStr;
+      dateInput.value = tomorrowStr;
+      document.getElementById("rescheduleModal").classList.remove("hidden");
+    }
+
+    function closeRescheduleModal() {
+      rescheduleJobId = null;
+      document.getElementById("rescheduleModal").classList.add("hidden");
+    }
+
+    async function rescheduleToTomorrow() {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().split("T")[0];
+      await doReschedule(tomorrowStr);
+    }
+
+    async function confirmReschedule() {
+      const date = document.getElementById("rescheduleDate").value;
+      if (!date) return alert("Please pick a date.");
+      await doReschedule(date);
+    }
+
+    async function doReschedule(newDate) {
+      if (!rescheduleJobId) return;
+      const id = rescheduleJobId;
+      closeRescheduleModal();
+      try {
+        const res = await fetch(`/jobs/${id}/reschedule`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newDate })
+        });
+        if (!res.ok) throw new Error("Server error");
+        await refreshAll(true);
+        showToast("Job rescheduled to " + newDate);
+      } catch (e) {
+        alert("Could not reschedule job.");
+      }
+    }
+
+    // ─── Finish Confirmation (Van side) ──────────────────────────────
+    let finishConfirmJobId = null;
+    let _finishConfirmShown = false;
+
+    function setupFinishConfirmListener() {
+      // Trigger on page hide / visibility change (switching apps on iPad)
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") {
+          maybePromptFinish();
+        }
+      });
+      window.addEventListener("pagehide", () => {
+        maybePromptFinish();
+      });
+    }
+
+    function maybePromptFinish() {
+      if (_finishConfirmShown) return;
+      if (currentMode !== "van") return;
+      // Find any in-progress job (has startTime on at least one service but not finishedAt)
+      const inProgress = jobs.find(j =>
+        !j.finishedAt &&
+        j.status !== "finished" &&
+        (j.services || []).some(s => s.startTime && !s.endTime)
+      );
+      if (!inProgress) return;
+      finishConfirmJobId = inProgress.id;
+      const label = inProgress.serviceAddress || inProgress.contractorName || "current job";
+      document.getElementById("finishConfirmJobLabel").textContent = label;
+      document.getElementById("finishConfirmModal").classList.remove("hidden");
+      _finishConfirmShown = true;
+    }
+
+    // Also show when user taps back / navigates away within the app
+    function checkFinishOnNavigation() {
+      maybePromptFinish();
+    }
+
+    function closeFinishConfirmModal() {
+      _finishConfirmShown = false;
+      document.getElementById("finishConfirmModal").classList.add("hidden");
+      finishConfirmJobId = null;
+    }
+
+    async function confirmFinishFromPrompt() {
+      const id = finishConfirmJobId;
+      closeFinishConfirmModal();
+      if (!id) return;
+      try {
+        await fetch(`/jobs/${id}/finish`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ geo: null })
+        });
+        await refreshAll(true);
+        showToast("Job marked as finished!");
+      } catch (e) {
+        console.error("Could not finish job:", e);
+      }
+    }
+
+
+    function showToast(msg, duration=2500) {
+      const t = document.createElement("div");
+      t.style.cssText = "position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#23243a;color:#fff;padding:12px 24px;border-radius:12px;z-index:9999;font-size:14px;pointer-events:none;";
+      t.innerText = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), duration);
+    }
+
     async function archiveJob(id){
 
       await fetch(`/jobs/${id}/archive`, { method:"POST" });
@@ -5528,6 +5687,8 @@ async function saveScheduleCrew() {
       renderServices();
 
       renderEstimateServices();
+
+      setupFinishConfirmListener();
 
       await loadEmployees();
       await loadEmployeeClockRecords();

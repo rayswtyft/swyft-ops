@@ -2476,6 +2476,37 @@ app.post("/jobs/:id/finish", async (req, res) => {
   }
 });
 
+app.post("/jobs/:id/reschedule", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    const { newDate } = req.body;
+    if (!newDate) return res.status(400).json({ error: "newDate required" });
+    const oldDate = job.serviceDate;
+    job.serviceDate = newDate;
+    // Reset timing fields so it's a fresh day
+    job.finishedAt = null;
+    job.openStatus = "single_day";
+    // Reset service-level times but keep crew size, notes, type etc.
+    for (const s of job.services || []) {
+      s.serviceDate = newDate;
+      s.onMyWayTime = null;
+      s.arrivedTime = null;
+      s.startTime = null;
+      s.endTime = null;
+      s.inventoryDeductedAt = null;
+    }
+    await upsertJob(query, job);
+    memoryDb = db;
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json({ success: true, oldDate, newDate, job: hydrateJob(job, db) });
+  } catch (err) {
+    console.error("Reschedule error:", err);
+    res.status(500).json({ error: "Could not reschedule job: " + err.message });
+  }
+});
+
 app.post("/jobs/:id/leave-open", async (req, res) => {
   try {
     const db = readDb();
