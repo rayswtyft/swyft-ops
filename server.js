@@ -124,11 +124,11 @@ async function driveUploadFile(buffer, filename, mimeType, parentId, token) {
 async function getOrCreateJobDriveFolder(job, token) {
   // Check if folder already stored
   if (job.driveFolderId) return job.driveFolderId;
-  // Create folder: "YYYY-MM-DD - Contractor - Address"
+  // Create folder: "Address - Contractor - YYYY-MM-DD"
   const label = [
-    job.serviceDate || "unknown-date",
+    (job.serviceAddress || "No Address").replace(/[/\\:*?"<>|]/g, "-").substring(0, 60),
     (job.contractorName || "Unknown").replace(/[/\\:*?"<>|]/g, "-").substring(0, 40),
-    (job.serviceAddress || "No Address").replace(/[/\\:*?"<>|]/g, "-").substring(0, 60)
+    job.serviceDate || "unknown-date"
   ].join(" - ");
   const folderId = await driveCreateFolder(label, DRIVE_JOBS_FOLDER_ID, token);
   await driveSetPublic(folderId, token);
