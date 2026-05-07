@@ -3861,6 +3861,12 @@ ${s.category === "Junk" && currentMode === "van" ? `
   <select onchange="updateVanJunkLoad(${job.id}, ${i}, this.value)">
     ${junkOptionsForService(s).map(o => `<option value="${o.label}" ${o.label===s.junkLoad?"selected":""}>${o.label}</option>`).join("")}
   </select>
+  <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+    ${!s.startTime ? `<button onclick="vanServiceAction(${job.id},${i},'start')" style="background:#16a34a;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:13px;cursor:pointer;">▶ Start Haul</button>` :
+      !s.endTime ? `<span style="color:#86efac;font-size:12px;">Started ${new Date(s.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+      <button onclick="vanServiceAction(${job.id},${i},'stop')" style="background:#dc2626;color:#fff;border:none;padding:7px 16px;border-radius:8px;font-size:13px;cursor:pointer;">■ Stop Haul</button>` :
+      `<span style="color:#9ca3af;font-size:12px;">✓ Haul ${new Date(s.startTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} → ${new Date(s.endTime).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>`}
+  </div>
 ` : s.category === "Junk" ? `Load: ${s.junkLoad}` : ""}
               ${s.subtype === "Concrete cutting" && s.trenches && s.trenches.length > 0 ? `
                 <div style="margin-top:6px;">
@@ -4112,6 +4118,37 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
     }
 
+
+async function vanServiceAction(jobId, serviceIndex, action) {
+  try {
+    let geo = null;
+    try {
+      const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, {timeout:5000}));
+      geo = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    } catch(e) {}
+    const resp = await fetch(`/jobs/${jobId}/services/${serviceIndex}/${action}`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ geo })
+    });
+    if (!resp.ok) {
+      const err = await resp.json();
+      showToast(err.error || 'Error');
+      return;
+    }
+    const data = await resp.json();
+    // Update local jobs array with response and re-render
+    const updatedJob = data.job || data;
+    if (updatedJob && updatedJob.id) {
+      const idx = jobs.findIndex(j => j.id == jobId);
+      if (idx !== -1) jobs[idx] = updatedJob;
+    }
+    renderJobList();
+    renderSelectedJob();
+  } catch(e) {
+    showToast('Network error');
+  }
+}
 
 async function updateVanJunkLoad(jobId, serviceIndex, load){
   const job = jobs.find(j => j.id === jobId);

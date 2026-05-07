@@ -2654,7 +2654,7 @@ app.post("/jobs/:id/services/:index/arrived", async (req, res) => {
 app.post("/jobs/:id/services/:index/start", async (req, res) => {
   const { db, job, service, index } = getService(req, res);
   if (!service) return;
-  if (!isHourly(service)) return res.status(400).json({ error: "This service does not use a timer" });
+  if (!isHourly(service) && service.category !== 'Junk') return res.status(400).json({ error: "This service does not use a timer" });
   try {
     service.startTime = new Date().toISOString();
     service.endTime = null;
@@ -2670,14 +2670,14 @@ app.post("/jobs/:id/services/:index/start", async (req, res) => {
 app.post("/jobs/:id/services/:index/stop", async (req, res) => {
   const { db, job, service, index } = getService(req, res);
   if (!service) return;
-  if (isHourly(service) && !service.startTime) return res.status(400).json({ error: "Start the service first" });
+  if ((isHourly(service) || service.category === 'Junk') && !service.startTime) return res.status(400).json({ error: "Start the service first" });
   try {
     service.endTime = new Date().toISOString();
     storeServiceGeo(service, "stop", req.body.geo);
     await recordRouteEvent(db, { action: "stop", jobId: job.id, serviceIndex: index, serviceAddress: job.serviceAddress, date: job.serviceDate, geo: req.body.geo });
     service.materialsUsed = normalizeMaterials(req.body.materialsUsed || {});
     deductInventoryForJobIfNeeded(db, job);
-    if (job.services.length && job.services.every(s => s.endTime || !isHourly(s))) {
+    if (job.services.length && job.services.every(s => s.endTime || (!isHourly(s) && s.category !== 'Junk'))) {
       job.finishedAt = new Date().toISOString();
     }
     const next = getNextJob(db, job.serviceDate, job.id);
