@@ -1662,30 +1662,6 @@ function quickbooksReviewForDate(db, date) {
 }
 
 
-/* TEMP: fetch QB custom fields */
-app.get("/admin/qb-custom-fields", async (req, res) => {
-  try {
-    const db = memoryDb;
-    // Fetch last 5 invoices to see all fields including Service Location
-    const data = await qbApiRequest(db, "get", "/query", null, {
-      query: "select * from Invoice ORDERBY MetaData.CreateTime DESC MAXRESULTS 5",
-      minorversion: 73
-    });
-    const invoices = (data?.QueryResponse?.Invoice || []).map(inv => ({
-      DocNumber: inv.DocNumber,
-      ShipAddr: inv.ShipAddr,
-      ShipFromAddr: inv.ShipFromAddr,
-      BillAddr: inv.BillAddr,
-      CustomerMemo: inv.CustomerMemo,
-      CustomField: inv.CustomField,
-      AllKeys: Object.keys(inv)
-    }));
-    res.json(invoices);
-  } catch(e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 /* ---------- META / SETTINGS ---------- */
 
 app.get("/meta", (_req, res) => {
