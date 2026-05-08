@@ -1666,19 +1666,23 @@ function quickbooksReviewForDate(db, date) {
 app.get("/admin/qb-custom-fields", async (req, res) => {
   try {
     const db = memoryDb;
-    // Get QB company preferences which includes custom field definitions
-    const accessToken = await qbRefreshIfNeeded(db);
-    const realmId = qbSettings(db).realmId;
-    const resp = await axios.get(
-      `https://quickbooks.api.intuit.com/v3/company/${realmId}/preferences`,
-      {
-        params: { minorversion: 73 },
-        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
-      }
-    );
-    res.json(resp.data);
+    // Fetch last 5 invoices to see all fields including Service Location
+    const data = await qbApiRequest(db, "get", "/query", null, {
+      query: "select * from Invoice ORDERBY MetaData.CreateTime DESC MAXRESULTS 5",
+      minorversion: 73
+    });
+    const invoices = (data?.QueryResponse?.Invoice || []).map(inv => ({
+      DocNumber: inv.DocNumber,
+      ShipAddr: inv.ShipAddr,
+      ShipFromAddr: inv.ShipFromAddr,
+      BillAddr: inv.BillAddr,
+      CustomerMemo: inv.CustomerMemo,
+      CustomField: inv.CustomField,
+      AllKeys: Object.keys(inv)
+    }));
+    res.json(invoices);
   } catch(e) {
-    res.status(500).json({ error: e.message, stack: e.stack });
+    res.status(500).json({ error: e.message });
   }
 });
 
