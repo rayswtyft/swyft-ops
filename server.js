@@ -1666,7 +1666,11 @@ function quickbooksReviewForDate(db, date) {
 app.get("/admin/qb-custom-fields", async (req, res) => {
   try {
     const db = memoryDb;
-    const data = await qbApiRequest(db, "get", "/preferences?minorversion=73");
+    // Query a recent invoice to see CustomField structure
+    const data = await qbApiRequest(db, "get", "/query", null, {
+      query: "select * from Invoice MAXRESULTS 1",
+      minorversion: 73
+    });
     res.json(data);
   } catch(e) {
     res.status(500).json({ error: e.message });
