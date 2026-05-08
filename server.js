@@ -1074,6 +1074,13 @@ function inferJobStatus(job) {
 
   const services = Array.isArray(job.services) ? job.services : [];
 
+  // For jobs with no services (e.g. dump runs), use job-level timestamps
+  if (!services.length) {
+    if (job.arrivedTime) return "active";
+    if (job.onMyWayTime) return "on_the_way";
+    return "scheduled";
+  }
+
   const anyInProgress = services.some(s => s.startTime && !s.endTime);
   if (anyInProgress) return "in_progress";
 
@@ -1814,32 +1821,6 @@ app.post("/daily-lunch-end", async (_req, res) => {
   } catch (err) { console.error("Lunch end error:", err); res.status(500).json({ error: err.message }); }
 });
 
-app.post("/daily-dump-start", async (_req, res) => {
-  try {
-    const db = readDb();
-    db.dailySetup.dumpRuns ||= [];
-    if (db.dailySetup.activeDumpStart) return res.status(400).json({ error: "Dump run already started" });
-    db.dailySetup.activeDumpStart = new Date().toISOString();
-    await query(`UPDATE daily_setup SET active_dump_start=$1 WHERE id=1`, [db.dailySetup.activeDumpStart]);
-    memoryDb = db;
-    broadcastUpdate("dump_started", {});
-    res.json({ ...db.dailySetup, dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []) });
-  } catch (err) { console.error("Dump start error:", err); res.status(500).json({ error: err.message }); }
-});
-
-app.post("/daily-dump-end", async (_req, res) => {
-  try {
-    const db = readDb();
-    db.dailySetup.dumpRuns ||= [];
-    if (!db.dailySetup.activeDumpStart) return res.status(400).json({ error: "Dump run not started" });
-    db.dailySetup.dumpRuns.push({ start: db.dailySetup.activeDumpStart, end: new Date().toISOString() });
-    db.dailySetup.activeDumpStart = null;
-    await query(`UPDATE daily_setup SET dump_runs=$1, active_dump_start=NULL WHERE id=1`, [JSON.stringify(db.dailySetup.dumpRuns)]);
-    memoryDb = db;
-    broadcastUpdate("dump_ended", {});
-    res.json({ ...db.dailySetup, dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []) });
-  } catch (err) { console.error("Dump end error:", err); res.status(500).json({ error: err.message }); }
-});
 
 // Legacy endpoint kept for backward compat
 app.get("/daily-checklist", (req, res) => {
@@ -2380,6 +2361,41 @@ app.post("/jobs", async (req, res) => {
   } catch (err) {
     console.error("Create job error:", err);
     res.status(500).json({ error: "Could not save job: " + err.message });
+  }
+});
+
+
+app.post("/jobs/quick-dump", async (req, res) => {
+  try {
+    const db = readDb();
+    const serviceDate = cleanString(req.body.serviceDate) || db.dailySetup.date || todayString();
+    const job = {
+      id: uuidv4(),
+      contractorId: null,
+      serviceAddress: "Dump Run",
+      jobType: "dump",
+      pickupAddress: null,
+      dropoffAddress: null,
+      serviceDate,
+      notes: cleanString(req.body.notes) || "",
+      createdAt: new Date().toISOString(),
+      services: [],
+      photos: [],
+      sortOrder: nextSortOrderForDate(db, serviceDate),
+      deletedAt: null,
+      archivedAt: null,
+      finishedAt: null,
+      quickbooksStatus: "not_applicable",
+      quickbooksInvoiceId: null
+    };
+    db.jobs.push(job);
+    await upsertJob(query, job);
+    memoryDb = db;
+    broadcastUpdate("job_created", { id: job.id });
+    res.json(hydrateJob(job, db));
+  } catch (err) {
+    console.error("Quick dump job error:", err);
+    res.status(500).json({ error: "Could not create dump job: " + err.message });
   }
 });
 

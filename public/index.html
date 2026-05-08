@@ -725,15 +725,12 @@
 
           <div id="lunchMeta" class="muted" style="margin-top:10px;"></div>
 
-          <div class="row" style="margin-top:10px;">
+          <div style="margin-top:10px;">
 
-            <button class="blue" onclick="startDump()">Dump Start</button>
-
-            <button class="blue" onclick="endDump()">Dump End</button>
+            <button class="secondary" style="width:100%;" onclick="quickAddDumpRun()">🗑️ Add Dump Run</button>
 
           </div>
 
-          <div id="dumpMeta" class="muted" style="margin-top:10px;"></div>
 
         </div>
 
@@ -874,6 +871,8 @@
           <div class="quick-actions" style="margin-top:10px;">
 
             <button class="blue" onclick="openJobModal()">+ Create Job</button>
+
+            <button class="secondary" onclick="quickAddDumpRun()">🗑️ Dump Run</button>
 
             <button class="secondary" onclick="openRecurringJobModal()">+ Create Recurring Job</button>
 
@@ -1948,7 +1947,6 @@ if (document.activeElement !== $("serviceDate") && !$("serviceDate").value) {
   $("serviceDate").value = currentDate();
 }
       $("lunchMeta").innerText = `Lunch today: ${Number(dailySetup.lunchMinutes || 0).toFixed(2)} min • Active: ${dailySetup.activeLunchStart ? "Yes" : "No"}`;
-      if ($("dumpMeta")) $("dumpMeta").innerText = `Dump today: ${Number(dailySetup.dumpMinutes || 0).toFixed(2)} min • Active: ${dailySetup.activeDumpStart ? "Yes" : "No"}`;
       renderAssignedEmployeePickers();
       renderEmployeeDropdown();
 
@@ -3525,12 +3523,12 @@ ${s.category === "Junk" && currentMode === "van" ? `
         : jobs.map(job => `
 
           <div class="job-item ${selectedJobId===job.id?"active":""}" onclick="selectJob('${job.id}')" draggable="${currentMode==='scheduling'}"
+               ondragstart="dragStart(event, '${job.id}')" ondragover="dragOver(event)" ondrop="dragDrop(event, '${job.id}')"
+               style="${job.jobType==='dump'?'border-left:4px solid #94a3b8;background:#f8fafc;':''}" >
 
-               ondragstart="dragStart(event, '${job.id}')" ondragover="dragOver(event)" ondrop="dragDrop(event, '${job.id}')">
+            <strong>${job.jobType==='dump' ? '🗑️ Dump Run' : (job.contractor?.companyName || job.contractor?.contactName || "No contractor")}</strong>
 
-            <strong>${job.contractor?.companyName || job.contractor?.contactName || "No contractor"}</strong>
-
-            <div class="muted" style="margin-top:4px;">${job.serviceAddress}</div>
+            ${job.jobType!=='dump' ? `<div class="muted" style="margin-top:4px;">${job.serviceAddress}</div>` : ''}
 
             <div class="status-pill status-${job.status}">${job.status.replaceAll("_"," ")}</div>
 
@@ -3540,7 +3538,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
               <span class="pill">${job.totalTravelMinutes} min travel</span>
 
-              ${currentMode !== "van" ? `<span class="pill">${fmtMoney(job.totalCost)}</span>` : ""}
+              ${currentMode !== "van" && job.jobType !== "dump" ? `<span class="pill">${fmtMoney(job.totalCost)}</span>` : ""}
 
             </div>
 
@@ -3618,7 +3616,9 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
           <div>
 
-            ${currentMode === "van" ? `
+            ${job.jobType === "dump" ? `
+              <div class="van-address-big" style="font-size:28px;">🗑️ Dump Run</div>
+            ` : currentMode === "van" ? `
               <div class="van-address-big">${job.serviceAddress}</div>
               <div class="van-job-type">${job.services?.[0]?.category || ""}${job.services?.[0]?.subtype ? " — " + job.services[0].subtype : ""}</div>
             ` : `
@@ -3648,7 +3648,20 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
         ${job.notes ? `<div class="muted" style="margin-top:10px;">Notes: ${job.notes}</div>` : ""}
 
-        ${currentMode === "van" ? ((job.jobType === "delivery" || (job.services || []).some(s => s.category === "Labor" && s.subtype === "Delivery")) ? `
+        ${job.jobType === "dump" ? `
+          <div style="text-align:center;padding:20px 0 10px;">
+            <div style="font-size:48px;">🗑️</div>
+            <div style="font-size:22px;font-weight:800;color:#1e293b;margin-top:8px;">Dump Run</div>
+          </div>
+          <div class="quick-actions" style="margin-top:12px;">
+            <button class="secondary" onclick="jobAction('/jobs/${job.id}/on-my-way')">Departed</button>
+            <button class="secondary" onclick="jobAction('/jobs/${job.id}/arrived')">Arrived</button>
+          </div>
+          <div class="quick-actions" style="margin-top:10px;">
+            <button class="green" onclick="jobAction('/jobs/${job.id}/finish')">✅ Done</button>
+            <button class="orange" onclick="leaveJobOpen('${job.id}')">Leave Open</button>
+          </div>
+        ` : currentMode === "van" ? ((job.jobType === "delivery" || (job.services || []).some(s => s.category === "Labor" && s.subtype === "Delivery")) ? `
           <div style="margin-top:10px;">
             ${!job.arrivedTime ? `
               <div style="margin-bottom:12px;">
@@ -3702,9 +3715,9 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
           <div class="quick-actions" style="margin-top:12px;">
 
-            <button onclick="toggleEditJob('${job.id}')">${editing ? "Close Edit" : "Edit Job"}</button>
+            ${job.jobType !== "dump" ? `<button onclick="toggleEditJob('${job.id}')">${editing ? "Close Edit" : "Edit Job"}</button>` : ""}
 
-            <button class="secondary" onclick="window.open('/invoice/${job.id}', '_blank')">View Invoice</button>
+            ${job.jobType !== "dump" ? `<button class="secondary" onclick="window.open('/invoice/${job.id}', '_blank')">View Invoice</button>` : ""}
 
           </div>
 
@@ -4898,21 +4911,19 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
 
     }
 
-    async function startDump(){
+    async function quickAddDumpRun(){
 
-      const res = await fetch("/daily-dump-start", { method:"POST" });
+      const serviceDate = $("scheduleDate") ? $("scheduleDate").value : (dailySetup.date || new Date().toISOString().slice(0,10));
 
-      const data = await res.json();
+      const res = await fetch("/jobs/quick-dump", {
 
-      if (data.error) return alert(data.error);
+        method: "POST",
 
-      await refreshAll(true);
+        headers: { "Content-Type": "application/json" },
 
-    }
+        body: JSON.stringify({ serviceDate })
 
-    async function endDump(){
-
-      const res = await fetch("/daily-dump-end", { method:"POST" });
+      });
 
       const data = await res.json();
 
@@ -4921,6 +4932,7 @@ const junkMatch = junkOptionsForService({ ...s, category, subtype }).find(x => x
       await refreshAll(true);
 
     }
+
 
 
 async function saveCrewSize() {
