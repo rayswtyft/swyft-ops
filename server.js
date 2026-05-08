@@ -352,6 +352,8 @@ function defaultState() {
       crewSize: 1,
       lunchBreaks: [],
       activeLunchStart: null,
+      dumpRuns: [],
+      activeDumpStart: null,
       dailyChecklistState: {}
     }
   };
@@ -376,6 +378,7 @@ function normalizeDbShape(db = {}) {
   db.dailySetup.date ||= todayString();
   db.dailySetup.crewSize ||= 1;
   db.dailySetup.lunchBreaks ||= [];
+  db.dailySetup.dumpRuns ||= [];
   db.dailySetup.dailyChecklistState ||= {};
   db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
     ? db.dailySetup.assignedEmployeeIds.map(String)
@@ -476,6 +479,8 @@ await query(`
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS crew_size INTEGER DEFAULT 1`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS lunch_breaks JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_lunch_start TEXT`);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS dump_runs JSONB DEFAULT '[]'::jsonb`);
+  await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS active_dump_start TEXT`);
   await query(`ALTER TABLE daily_setup ADD COLUMN IF NOT EXISTS assigned_employee_ids JSONB DEFAULT '[]'::jsonb`);
   await query(`ALTER TABLE employees ADD COLUMN IF NOT EXISTS pin TEXT`);
   await query(`ALTER TABLE jobs ADD COLUMN IF NOT EXISTS drive_folder_id TEXT`);
@@ -594,6 +599,8 @@ db.inventory = inventoryRes.rows.map(i => {
       crewSize: Number(d.crew_size || 1),
       lunchBreaks: Array.isArray(d.lunch_breaks) ? d.lunch_breaks : [],
       activeLunchStart: d.active_lunch_start || null,
+      dumpRuns: Array.isArray(d.dump_runs) ? d.dump_runs : [],
+      activeDumpStart: d.active_dump_start || null,
       dailyChecklistState: {},
       assignedEmployeeIds: Array.isArray(d.assigned_employee_ids) ? d.assigned_employee_ids.map(String) : []
     };
@@ -1723,7 +1730,11 @@ app.get("/daily-setup", (_req, res) => {
   const db = readDbRO();
   res.json({
     ...db.dailySetup,
-    lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
+    lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []),
+    dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []),
+    activeDumpStart: db.dailySetup.activeDumpStart || null,
+    dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []),
+    activeDumpStart: db.dailySetup.activeDumpStart || null
   });
 });
 
@@ -1733,6 +1744,7 @@ app.post("/daily-setup", async (req, res) => {
   db.dailySetup.date = cleanString(req.body.date) || todayString();
   db.dailySetup.crewSize = Number(req.body.crewSize || 1);
   db.dailySetup.lunchBreaks ||= [];
+  db.dailySetup.dumpRuns ||= [];
   db.dailySetup.dailyChecklistState ||= {};
   db.dailySetup.assignedEmployeeIds = Array.isArray(db.dailySetup.assignedEmployeeIds)
     ? db.dailySetup.assignedEmployeeIds.map(String)
@@ -1759,7 +1771,7 @@ app.post("/daily-setup", async (req, res) => {
       `INSERT INTO daily_setup (id, setup_date, crew_size, lunch_breaks, active_lunch_start, assigned_employee_ids)
        VALUES (1,$1,$2,$3,$4,$5)
        ON CONFLICT (id) DO UPDATE SET setup_date=$1, crew_size=$2, assigned_employee_ids=$5`,
-      [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null, db.dailySetup.assignedEmployeeIds || []]
+      [db.dailySetup.date || todayString(), Number(db.dailySetup.crewSize || 1), db.dailySetup.lunchBreaks || [], db.dailySetup.activeLunchStart || null, db.dailySetup.assignedEmployeeIds || [], JSON.stringify(db.dailySetup.dumpRuns || []), db.dailySetup.activeDumpStart || null]
     );
   } catch (err) {
     console.error("daily-setup persist error:", err);
@@ -1769,7 +1781,11 @@ app.post("/daily-setup", async (req, res) => {
 
   res.json({
     ...db.dailySetup,
-    lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || [])
+    lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []),
+    dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []),
+    activeDumpStart: db.dailySetup.activeDumpStart || null,
+    dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []),
+    activeDumpStart: db.dailySetup.activeDumpStart || null
   });
 });
 
@@ -1796,6 +1812,33 @@ app.post("/daily-lunch-end", async (_req, res) => {
     broadcastUpdate("lunch_ended", {});
     res.json({ ...db.dailySetup, lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []) });
   } catch (err) { console.error("Lunch end error:", err); res.status(500).json({ error: err.message }); }
+});
+
+app.post("/daily-dump-start", async (_req, res) => {
+  try {
+    const db = readDb();
+    db.dailySetup.dumpRuns ||= [];
+    if (db.dailySetup.activeDumpStart) return res.status(400).json({ error: "Dump run already started" });
+    db.dailySetup.activeDumpStart = new Date().toISOString();
+    await query(`UPDATE daily_setup SET active_dump_start=$1 WHERE id=1`, [db.dailySetup.activeDumpStart]);
+    memoryDb = db;
+    broadcastUpdate("dump_started", {});
+    res.json({ ...db.dailySetup, dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []) });
+  } catch (err) { console.error("Dump start error:", err); res.status(500).json({ error: err.message }); }
+});
+
+app.post("/daily-dump-end", async (_req, res) => {
+  try {
+    const db = readDb();
+    db.dailySetup.dumpRuns ||= [];
+    if (!db.dailySetup.activeDumpStart) return res.status(400).json({ error: "Dump run not started" });
+    db.dailySetup.dumpRuns.push({ start: db.dailySetup.activeDumpStart, end: new Date().toISOString() });
+    db.dailySetup.activeDumpStart = null;
+    await query(`UPDATE daily_setup SET dump_runs=$1, active_dump_start=NULL WHERE id=1`, [JSON.stringify(db.dailySetup.dumpRuns)]);
+    memoryDb = db;
+    broadcastUpdate("dump_ended", {});
+    res.json({ ...db.dailySetup, dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []) });
+  } catch (err) { console.error("Dump end error:", err); res.status(500).json({ error: err.message }); }
 });
 
 // Legacy endpoint kept for backward compat
@@ -1952,6 +1995,8 @@ app.get("/dashboard", (req, res) => {
     totalTravelMinutes: Number(jobs.reduce((sum, j) => sum + j.totalTravelMinutes, 0).toFixed(2)),
     totalBillableHours: Number(jobs.reduce((sum, j) => sum + j.totalHours, 0).toFixed(2)),
     lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []),
+    dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []),
+    activeDumpStart: db.dailySetup.activeDumpStart || null,
     scheduled: jobs.filter(j => j.status === "scheduled").length,
     onTheWay: jobs.filter(j => j.status === "on_the_way").length,
     inProgress: jobs.filter(j => j.status === "in_progress" || j.status === "active").length,
@@ -3106,6 +3151,8 @@ app.get("/finish-day-summary", (req, res) => {
     totalJobs: jobs.length,
     totalTravelMinutes: Number(jobs.reduce((sum, j) => sum + j.totalTravelMinutes, 0).toFixed(2)),
     lunchMinutes: sumRangesMinutes(db.dailySetup.lunchBreaks || []),
+    dumpMinutes: sumRangesMinutes(db.dailySetup.dumpRuns || []),
+    activeDumpStart: db.dailySetup.activeDumpStart || null,
     totalPhotos: jobs.reduce((sum, j) => sum + (j.photos?.length || 0), 0),
     totalMaterials: Number(
       jobs.reduce((sum, j) => sum + j.services.reduce((svcSum, s) => svcSum + (s.materialsTotal || 0), 0), 0).toFixed(2)
