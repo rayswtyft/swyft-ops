@@ -1568,7 +1568,7 @@ async function qbCreateInvoiceForJob(db, job) {
         lines.push({
           DetailType: "SalesItemLineDetail",
           Amount: laborTotal,
-          Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${crew} worker${crew !== 1 ? "s" : ""}`,
+          Description: `${s.subtype} | ${crew} worker${crew !== 1 ? "s" : ""}`,
           SalesItemLineDetail: {
             Qty: Number((hours * crew).toFixed(3)),
             UnitPrice: perWorkerRate
@@ -1581,7 +1581,7 @@ async function qbCreateInvoiceForJob(db, job) {
         lines.push({
           DetailType: "SalesItemLineDetail",
           Amount: amt,
-          Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${s.junkLoad || ""}`,
+          Description: `${s.subtype} | ${s.junkLoad || ""}`,
           SalesItemLineDetail: { Qty: 1, UnitPrice: amt }
         });
       }
@@ -1589,8 +1589,8 @@ async function qbCreateInvoiceForJob(db, job) {
       const amt = Number(s.baseTotal || 0);
       if (amt > 0) {
         const desc = s.subtype === "Concrete cutting"
-          ? `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""}) | ${s.linearFeet || 0} linear ft`
-          : `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""})`;
+          ? `${s.subtype} | ${s.linearFeet || 0} linear ft`
+          : `${s.subtype}`;
         lines.push({
           DetailType: "SalesItemLineDetail",
           Amount: amt,
@@ -1602,7 +1602,7 @@ async function qbCreateInvoiceForJob(db, job) {
       lines.push({
         DetailType: "SalesItemLineDetail",
         Amount: Number(s.baseTotal || 0),
-        Description: `${s.subtype} - ${job.serviceAddress || ""} (${job.serviceDate || ""})`,
+        Description: `${s.subtype}`,
         SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.baseTotal || 0) }
       });
     }
@@ -1612,7 +1612,7 @@ async function qbCreateInvoiceForJob(db, job) {
       lines.push({
         DetailType: "SalesItemLineDetail",
         Amount: Number(s.materialsTotal || 0),
-        Description: `Materials - ${s.subtype} (${job.serviceDate || ""})`,
+        Description: `Materials - ${s.subtype}`,
         SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.materialsTotal || 0) }
       });
     }
@@ -1622,15 +1622,21 @@ async function qbCreateInvoiceForJob(db, job) {
     lines.push({
       DetailType: "SalesItemLineDetail",
       Amount: Number(job.totalCost || 0),
-      Description: `Services - ${job.serviceAddress || ""} (${job.serviceDate || ""})`,
+      Description: `Services`,
       SalesItemLineDetail: { Qty: 1, UnitPrice: Number(job.totalCost || 0) }
     });
   }
 
+  // Invoice number: start at 2000, increment by job id
+  const jobNum = parseInt(job.id, 10);
+  const docNumber = String(isNaN(jobNum) ? 2000 : 2000 + jobNum);
+
   const payload = {
     CustomerRef: { value: customer.Id },
+    DocNumber: docNumber,
     TxnDate: job.serviceDate,
-    CustomerMemo: { value: `${job.serviceAddress || ""}` },
+    ShipAddr: job.serviceAddress ? { Line1: job.serviceAddress } : undefined,
+    CustomerMemo: { value: job.notes || "" },
     PrivateNote: `Job #${job.id} | ${job.serviceDate || ""} | ${job.serviceAddress || ""}`,
     Line: lines
   };
