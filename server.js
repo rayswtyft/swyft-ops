@@ -1568,7 +1568,7 @@ async function qbCreateInvoiceForJob(db, job) {
         lines.push({
           DetailType: "SalesItemLineDetail",
           Amount: laborTotal,
-          Description: `${s.subtype} | ${crew} worker${crew !== 1 ? "s" : ""}`,
+          Description: `${s.subtype}`,
           SalesItemLineDetail: {
             Qty: Number((hours * crew).toFixed(3)),
             UnitPrice: perWorkerRate,
@@ -1666,14 +1666,19 @@ function quickbooksReviewForDate(db, date) {
 app.get("/admin/qb-custom-fields", async (req, res) => {
   try {
     const db = memoryDb;
-    // Query a recent invoice to see CustomField structure
-    const data = await qbApiRequest(db, "get", "/query", null, {
-      query: "select * from Invoice MAXRESULTS 1",
-      minorversion: 73
-    });
-    res.json(data);
+    // Get QB company preferences which includes custom field definitions
+    const accessToken = await qbRefreshIfNeeded(db);
+    const realmId = qbSettings(db).realmId;
+    const resp = await axios.get(
+      `https://quickbooks.api.intuit.com/v3/company/${realmId}/preferences`,
+      {
+        params: { minorversion: 73 },
+        headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" }
+      }
+    );
+    res.json(resp.data);
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message, stack: e.stack });
   }
 });
 
