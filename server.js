@@ -1661,6 +1661,18 @@ function quickbooksReviewForDate(db, date) {
   }));
 }
 
+
+/* TEMP: fetch QB custom fields */
+app.get("/admin/qb-custom-fields", async (req, res) => {
+  try {
+    const db = memoryDb;
+    const data = await qbApiRequest(db, "get", "/preferences?minorversion=73");
+    res.json(data);
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 /* ---------- META / SETTINGS ---------- */
 
 app.get("/meta", (_req, res) => {
