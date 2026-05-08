@@ -1571,7 +1571,8 @@ async function qbCreateInvoiceForJob(db, job) {
           Description: `${s.subtype} | ${crew} worker${crew !== 1 ? "s" : ""}`,
           SalesItemLineDetail: {
             Qty: Number((hours * crew).toFixed(3)),
-            UnitPrice: perWorkerRate
+            UnitPrice: perWorkerRate,
+            ServiceDate: job.serviceDate || undefined
           }
         });
       }
@@ -1582,7 +1583,7 @@ async function qbCreateInvoiceForJob(db, job) {
           DetailType: "SalesItemLineDetail",
           Amount: amt,
           Description: `${s.subtype} | ${s.junkLoad || ""}`,
-          SalesItemLineDetail: { Qty: 1, UnitPrice: amt }
+          SalesItemLineDetail: { Qty: 1, UnitPrice: amt, ServiceDate: job.serviceDate || undefined }
         });
       }
     } else if (isConcrete(s)) {
@@ -1595,7 +1596,7 @@ async function qbCreateInvoiceForJob(db, job) {
           DetailType: "SalesItemLineDetail",
           Amount: amt,
           Description: desc,
-          SalesItemLineDetail: { Qty: Number(s.linearFeet || 1), UnitPrice: Number((amt / Math.max(s.linearFeet || 1, 1)).toFixed(2)) }
+          SalesItemLineDetail: { Qty: Number(s.linearFeet || 1), UnitPrice: Number((amt / Math.max(s.linearFeet || 1, 1)).toFixed(2)), ServiceDate: job.serviceDate || undefined }
         });
       }
     } else if (Number(s.baseTotal || 0) > 0) {
@@ -1603,7 +1604,7 @@ async function qbCreateInvoiceForJob(db, job) {
         DetailType: "SalesItemLineDetail",
         Amount: Number(s.baseTotal || 0),
         Description: `${s.subtype}`,
-        SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.baseTotal || 0) }
+        SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.baseTotal || 0), ServiceDate: job.serviceDate || undefined }
       });
     }
 
@@ -1613,7 +1614,7 @@ async function qbCreateInvoiceForJob(db, job) {
         DetailType: "SalesItemLineDetail",
         Amount: Number(s.materialsTotal || 0),
         Description: `Materials - ${s.subtype}`,
-        SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.materialsTotal || 0) }
+        SalesItemLineDetail: { Qty: 1, UnitPrice: Number(s.materialsTotal || 0), ServiceDate: job.serviceDate || undefined }
       });
     }
   });
@@ -1623,7 +1624,7 @@ async function qbCreateInvoiceForJob(db, job) {
       DetailType: "SalesItemLineDetail",
       Amount: Number(job.totalCost || 0),
       Description: `Services`,
-      SalesItemLineDetail: { Qty: 1, UnitPrice: Number(job.totalCost || 0) }
+      SalesItemLineDetail: { Qty: 1, UnitPrice: Number(job.totalCost || 0), ServiceDate: job.serviceDate || undefined }
     });
   }
 
