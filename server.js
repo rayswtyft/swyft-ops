@@ -3218,8 +3218,8 @@ app.post("/finish-day", async (req, res) => {
     // Stop any running services
     if (raw.services) {
       raw.services = raw.services.map(s => {
-        if (s.startedAt && !s.stoppedAt) {
-          s.stoppedAt = now;
+        if (s.startTime && !s.endTime) {
+          s.endTime = now;
         }
         return s;
       });
