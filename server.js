@@ -1650,9 +1650,10 @@ async function qbCreateInvoiceForJob(db, job) {
     CustomerRef: { value: customer.Id },
     DocNumber: docNumber,
     TxnDate: job.serviceDate,
-    ShipAddr: job.serviceAddress ? { Line1: job.serviceAddress } : undefined,
+    CustomField: job.serviceAddress ? [
+      { DefinitionId: "1", Name: "Service Location", Type: "StringType", StringValue: job.serviceAddress }
+    ] : undefined,
     CustomerMemo: { value: job.notes || "" },
-    PrivateNote: `Job #${job.id} | ${job.serviceDate || ""} | ${job.serviceAddress || ""}`,
     Line: lines
   };
 
