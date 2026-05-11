@@ -1642,20 +1642,27 @@ async function qbCreateInvoiceForJob(db, job) {
     });
   }
 
-  // Invoice number: start at 2000, increment by job id
-  const jobNum = parseInt(job.id, 10);
-  const docNumber = String(isNaN(jobNum) ? 2000 : 2000 + jobNum);
+  // Invoice number: start at 2000, count sent invoices to determine next number
+  const sentJobs = db.jobs.filter(j => j.quickbooksStatus === "sent" && j.quickbooksInvoiceId);
+  const docNumber = String(2000 + sentJobs.length);
+
+  // Build CustomField array — DefinitionId "1" = Service Location (no Type field, QB rejects it)
+  const customFields = [];
+  if (job.serviceAddress) {
+    customFields.push({ DefinitionId: "1", Name: "Service Location", StringValue: job.serviceAddress });
+  }
 
   const payload = {
     CustomerRef: { value: customer.Id },
     DocNumber: docNumber,
     TxnDate: job.serviceDate,
-    CustomField: job.serviceAddress ? [
-      { DefinitionId: "1", Name: "Service Location", Type: "StringType", StringValue: job.serviceAddress }
-    ] : undefined,
-    CustomerMemo: { value: job.notes || "" },
-    Line: lines
+    Line: lines,
+    CustomField: customFields.length ? customFields : undefined,
   };
+  // Only add CustomerMemo if there are actual notes (NOT the address)
+  if (job.notes && job.notes.trim()) {
+    payload.CustomerMemo = { value: job.notes.trim() };
+  }
 
   const created = await qbApiRequest(db, "post", "/invoice?minorversion=73", payload);
   return created.Invoice || created;
