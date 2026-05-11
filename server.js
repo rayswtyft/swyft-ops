@@ -1664,8 +1664,12 @@ async function qbCreateInvoiceForJob(db, job) {
     payload.CustomerMemo = { value: job.notes.trim() };
   }
 
+  console.log("[QB] Invoice payload CustomField:", JSON.stringify(payload.CustomField));
+  console.log("[QB] Invoice payload CustomerMemo:", JSON.stringify(payload.CustomerMemo));
   const created = await qbApiRequest(db, "post", "/invoice?minorversion=73", payload);
-  return created.Invoice || created;
+  const inv = created.Invoice || created;
+  console.log("[QB] Created invoice CustomField:", JSON.stringify(inv?.CustomField));
+  return inv;
 }
 
 function quickbooksReviewForDate(db, date) {
@@ -3449,6 +3453,58 @@ app.get("/qb/callback", async (req, res) => {
   } catch (e) {
     console.error(e.response?.data || e.message);
     res.status(500).send("QB connection failed");
+  }
+});
+
+// Diagnostic: query QB to see what custom fields exist + their DefinitionIds
+app.get("/qb/custom-fields", async (req, res) => {
+  try {
+    const db = readDb();
+    if (!db.settings.quickbooks?.connected) return res.status(400).json({ error: "QB not connected" });
+    // Query a recent invoice to see what CustomFields QB returns
+    const data = await qbApiRequest(db, "get", "/query", null, {
+      query: "select * from Invoice maxresults 1",
+      minorversion: 73
+    });
+    const invoice = data?.QueryResponse?.Invoice?.[0];
+    res.json({
+      note: "Custom fields from most recent invoice",
+      customFields: invoice?.CustomField || [],
+      invoiceId: invoice?.Id,
+      docNumber: invoice?.DocNumber
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.response?.data || e.message });
+  }
+});
+
+// Diagnostic: send a test invoice payload and log the full response
+app.post("/qb/test-custom-field", async (req, res) => {
+  try {
+    const db = readDb();
+    if (!db.settings.quickbooks?.connected) return res.status(400).json({ error: "QB not connected" });
+    const { jobId } = req.body;
+    if (!jobId) return res.status(400).json({ error: "jobId required" });
+    const rawJob = db.jobs.find(j => String(j.id) === String(jobId));
+    if (!rawJob) return res.status(404).json({ error: "Job not found" });
+    const job = hydrateJob(rawJob, db);
+    // Return what the payload WOULD look like without actually sending
+    const contractor = job.contractor;
+    const sentJobs = db.jobs.filter(j => j.quickbooksStatus === "sent" && j.quickbooksInvoiceId);
+    const customFields = job.serviceAddress
+      ? [{ DefinitionId: "1", Name: "Service Location", StringValue: job.serviceAddress }]
+      : [];
+    res.json({
+      wouldSend: {
+        customerName: contractor?.companyName || contractor?.contactName,
+        serviceAddress: job.serviceAddress,
+        docNumber: String(2000 + sentJobs.length),
+        CustomField: customFields,
+        note: "This is what would be sent to QB. Check DefinitionId matches your QB custom field."
+      }
+    });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
   }
 });
 
