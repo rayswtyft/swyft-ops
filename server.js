@@ -3204,67 +3204,80 @@ app.get("/finish-day-summary", (req, res) => {
 app.post("/finish-day", async (req, res) => {
   const db = readDb();
   const date = cleanString(req.body.date) || db.dailySetup.date || todayString();
+  const now = new Date().toISOString();
 
   const rawJobs = activeJobsForDate(db, date);
-  const finishedRawJobs = rawJobs.filter(j => inferJobStatus(j) === "finished");
 
-  if (!finishedRawJobs.length) {
-    return res.json({ finishedJobs: 0, downloadUrl: null });
+  // Stop any in-progress services and mark jobs as finished
+  const jobsToClose = rawJobs.filter(j => {
+    const status = inferJobStatus(j);
+    return status !== "finished" && status !== "not_started" && j.jobType !== "Dump Run";
+  });
+
+  for (const raw of jobsToClose) {
+    // Stop any running services
+    if (raw.services) {
+      raw.services = raw.services.map(s => {
+        if (s.startedAt && !s.stoppedAt) {
+          s.stoppedAt = now;
+        }
+        return s;
+      });
+    }
+    // Mark as finished
+    if (!raw.finishedAt) raw.finishedAt = now;
+    try {
+      await query(
+        `UPDATE jobs SET services=$1, finished_at=$2 WHERE id=$3`,
+        [JSON.stringify(raw.services || []), now, String(raw.id)]
+      );
+    } catch(e) { console.error("Error force-closing job:", raw.id, e); }
   }
+
+  // Re-read all jobs for the date (now including force-closed)
+  const db2 = readDb();
+  const allDayJobs = activeJobsForDate(db2, date);
+  const finishedRawJobs = allDayJobs.filter(j => j.finishedAt || inferJobStatus(j) === "finished");
 
   for (const raw of finishedRawJobs) {
-    deductInventoryForJobIfNeeded(db, raw);
+    deductInventoryForJobIfNeeded(db2, raw);
   }
+  memoryDb = db2;
 
-  // Update inventory in memory immediately; full persist happens at day_finished
-  memoryDb = db;
-
-  const hydratedJobs = finishedRawJobs.map(j => hydrateJob(j, db));
-
-  const zipName = `invoices-${date}-${Date.now()}.zip`;
-  const zipPath = path.join(EXPORTS_DIR, zipName);
-  const output = fs.createWriteStream(zipPath);
-  const archive = archiver("zip", { zlib: { level: 9 } });
-
-  output.on("close", async () => {
-    const archivedAt = new Date().toISOString();
-    const ids = finishedRawJobs.map(j => String(j.id));
-    try {
-      // Archive all finished jobs in one atomic UPDATE
+  // Archive all finished jobs
+  const archivedAt = now;
+  const ids = finishedRawJobs.map(j => String(j.id));
+  try {
+    if (ids.length) {
       await query(
         `UPDATE jobs SET archived_at=$1 WHERE id = ANY($2::text[])`,
         [archivedAt, ids]
       );
-    } catch(e) { console.error("Bulk archive error on finish-day:", e); }
+    }
+  } catch(e) { console.error("Bulk archive error on finish-day:", e); }
 
-    // Update memory
-    const db2 = readDb();
-    ids.forEach(id => {
-      const dbJob = db2.jobs.find(x => String(x.id) === id);
-      if (dbJob) dbJob.archivedAt = archivedAt;
-    });
-    memoryDb = db2;
-    broadcastUpdate("day_finished", {});
+  // Clock out any still-clocked-in employees
+  try {
+    await query(
+      `UPDATE time_entries SET clock_out=$1 WHERE clock_out IS NULL AND date=$2`,
+      [now, date]
+    );
+  } catch(e) { console.error("Error clocking out employees:", e); }
 
-    res.json({
-      finishedJobs: finishedRawJobs.length,
-      downloadUrl: `/exports/${zipName}`
-    });
+  // Update memory
+  const db3 = readDb();
+  ids.forEach(id => {
+    const dbJob = db3.jobs.find(x => String(x.id) === id);
+    if (dbJob) dbJob.archivedAt = archivedAt;
   });
+  memoryDb = db3;
+  broadcastUpdate("day_finished", {});
 
-  archive.on("error", err => {
-    res.status(500).json({ error: err.message });
+  res.json({
+    finishedJobs: finishedRawJobs.length,
+    forceStopped: jobsToClose.length,
+    success: true
   });
-
-  archive.pipe(output);
-
-  for (const job of hydratedJobs) {
-    const filePath = path.join(EXPORTS_DIR, `invoice-${job.id}.pdf`);
-    await writeInvoicePdf(job, filePath);
-    archive.file(filePath, { name: `invoice-${job.id}.pdf` });
-  }
-
-  archive.finalize();
 });
 
 /* ---------- INVOICE HTML ---------- */

@@ -5209,7 +5209,8 @@ async function saveScheduleCrew() {
 
       await refreshAll(true);
 
-      window.open(data.downloadUrl, "_blank");
+      const stopMsg = data.forceStopped > 0 ? ` (${data.forceStopped} job${data.forceStopped > 1 ? "s" : ""} auto-stopped)` : "";
+      alert(`Day closed — ${data.finishedJobs} job${data.finishedJobs !== 1 ? "s" : ""} archived${stopMsg}. All crew clocked out.`);
 
     }
 
