@@ -1659,9 +1659,13 @@ async function qbCreateInvoiceForJob(db, job) {
     Line: lines,
     CustomField: customFields.length ? customFields : undefined,
   };
-  // Only add CustomerMemo if there are actual notes (NOT the address)
-  if (job.notes && job.notes.trim()) {
-    payload.CustomerMemo = { value: job.notes.trim() };
+  // CustomerMemo: always include service address for now (testing fallback)
+  // Once custom field is confirmed working, remove the address from here
+  const memoLines = [];
+  if (job.serviceAddress) memoLines.push(job.serviceAddress);
+  if (job.notes && job.notes.trim()) memoLines.push(job.notes.trim());
+  if (memoLines.length) {
+    payload.CustomerMemo = { value: memoLines.join(" | ") };
   }
 
   console.log("[QB] Invoice payload CustomField:", JSON.stringify(payload.CustomField));
