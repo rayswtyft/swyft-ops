@@ -3520,32 +3520,59 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
         ? `<div class="muted">No jobs for this date.</div>`
 
-        : jobs.map(job => `
+        : jobs.map((job, idx) => `
 
-          <div class="job-item ${selectedJobId===job.id?"active":""}" onclick="selectJob('${job.id}')" draggable="${currentMode==='scheduling'}"
+          <div class="job-item ${selectedJobId===job.id?"active":""}" draggable="${currentMode==='scheduling'}"
                ondragstart="dragStart(event, '${job.id}')" ondragover="dragOver(event)" ondrop="dragDrop(event, '${job.id}')"
-               style="${job.jobType==='dump'?'border-left:4px solid #94a3b8;background:#f8fafc;':''}" >
+               style="display:flex;align-items:flex-start;gap:8px;${job.jobType==='dump'?'border-left:4px solid #94a3b8;background:#f8fafc;':''}" >
 
-            <strong>${job.jobType==='dump' ? '🗑️ Dump Run' : (job.contractor?.companyName || job.contractor?.contactName || "No contractor")}</strong>
+            ${currentMode==='scheduling' ? `
+            <div style="display:flex;flex-direction:column;gap:4px;padding-top:4px;flex-shrink:0;">
+              <button onclick="event.stopPropagation();moveJob('${job.id}',-1)" ${idx===0?'disabled':''} style="background:${idx===0?'#e2e8f0':'#e2e8f0'};border:none;border-radius:6px;width:28px;height:28px;font-size:14px;cursor:${idx===0?'default':'pointer'};opacity:${idx===0?'0.3':'1'};display:flex;align-items:center;justify-content:center;">▲</button>
+              <button onclick="event.stopPropagation();moveJob('${job.id}',1)" ${idx===jobs.length-1?'disabled':''} style="background:#e2e8f0;border:none;border-radius:6px;width:28px;height:28px;font-size:14px;cursor:${idx===jobs.length-1?'default':'pointer'};opacity:${idx===jobs.length-1?'0.3':'1'};display:flex;align-items:center;justify-content:center;">▼</button>
+            </div>` : ''}
 
-            ${job.jobType!=='dump' ? `<div class="muted" style="margin-top:4px;">${job.serviceAddress}</div>` : ''}
+            <div style="flex:1;cursor:pointer;" onclick="selectJob('${job.id}')">
+              <strong>${job.jobType==='dump' ? '🗑️ Dump Run' : (job.contractor?.companyName || job.contractor?.contactName || "No contractor")}</strong>
 
-            <div class="status-pill status-${job.status}">${job.status.replaceAll("_"," ")}</div>
+              ${job.jobType!=='dump' ? `<div class="muted" style="margin-top:4px;">${job.serviceAddress}</div>` : ''}
 
-            <div>
+              <div class="status-pill status-${job.status}">${job.status.replaceAll("_"," ")}</div>
 
-              <span class="pill">${job.totalHours} hrs</span>
+              <div>
 
-              <span class="pill">${job.totalTravelMinutes} min travel</span>
+                <span class="pill">${job.totalHours} hrs</span>
 
-              ${currentMode !== "van" && job.jobType !== "dump" ? `<span class="pill">${fmtMoney(job.totalCost)}</span>` : ""}
+                <span class="pill">${job.totalTravelMinutes} min travel</span>
 
+                ${currentMode !== "van" && job.jobType !== "dump" ? `<span class="pill">${fmtMoney(job.totalCost)}</span>` : ""}
+
+              </div>
             </div>
 
           </div>
 
         `).join("");
 
+    }
+
+    async function moveJob(jobId, direction) {
+      const list = [...jobs];
+      const idx = list.findIndex(j => j.id === jobId);
+      if (idx < 0) return;
+      const newIdx = idx + direction;
+      if (newIdx < 0 || newIdx >= list.length) return;
+      const [moved] = list.splice(idx, 1);
+      list.splice(newIdx, 0, moved);
+      jobs = list;
+      renderJobList();
+      renderScheduleStrip();
+      await fetch("/jobs/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedIds: jobs.map(j => j.id) })
+      });
+      await refreshAll(false);
     }
 
 
