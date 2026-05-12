@@ -3850,7 +3850,8 @@ app.post("/admin/backfill-photo-ids", async (_req, res) => {
     }
 
     // Reload memory db so thumbnails work immediately
-    await loadDb();
+    const loaded = await loadDbFromPostgres();
+    memoryDb = normalizeDbShape(loaded);
     res.json({ success: true, total: rows.length, updated, skipped });
   } catch(err) {
     res.status(500).json({ error: err.message });
