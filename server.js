@@ -3811,6 +3811,52 @@ initializeDatabaseBackedState()
     process.exit(1);
   });
 
+
+app.post("/admin/backfill-photo-ids", async (_req, res) => {
+  try {
+    // Get all photos that have a url but no drive_file_id
+    const result = await query(`SELECT id, url FROM job_photos WHERE (drive_file_id IS NULL OR drive_file_id = '') AND url IS NOT NULL`);
+    const rows = result.rows;
+    let updated = 0;
+    const skipped = [];
+
+    for (const row of rows) {
+      // Extract file ID from various Drive URL formats:
+      // https://drive.google.com/file/d/FILE_ID/view
+      // https://drive.google.com/open?id=FILE_ID
+      // https://drive.google.com/uc?export=view&id=FILE_ID
+      // https://lh3.googleusercontent.com/d/FILE_ID
+      let fileId = null;
+      const url = row.url || "";
+
+      const patterns = [
+        /\/file\/d\/([a-zA-Z0-9_-]{20,})/,
+        /[?&]id=([a-zA-Z0-9_-]{20,})/,
+        /\/d\/([a-zA-Z0-9_-]{20,})/,
+        /googleusercontent\.com\/d\/([a-zA-Z0-9_-]{20,})/,
+      ];
+
+      for (const pat of patterns) {
+        const m = url.match(pat);
+        if (m) { fileId = m[1]; break; }
+      }
+
+      if (fileId) {
+        await query(`UPDATE job_photos SET drive_file_id=$1 WHERE id=$2`, [fileId, row.id]);
+        updated++;
+      } else {
+        skipped.push({ id: row.id, url: url.slice(0, 80) });
+      }
+    }
+
+    // Reload memory db so thumbnails work immediately
+    await loadDb();
+    res.json({ success: true, total: rows.length, updated, skipped });
+  } catch(err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/admin/backfill-addresses", async (_req, res) => {
   try {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
