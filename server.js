@@ -3700,6 +3700,34 @@ app.get("/time-clock", (req, res) => {
   res.json(rows);
 });
 
+
+// Sync crew size across all today's jobs based on clocked-in count
+async function syncCrewSizeFromClockIns(db) {
+  const today = db.dailySetup?.date || todayString();
+  const clockedIn = (db.timeClockEntries || []).filter(r => r.date === today && !r.clockOut);
+  const newCrew = Math.max(1, clockedIn.length);
+  db.dailySetup.crewSize = newCrew;
+  // Update all services on today's jobs
+  const todayJobs = (db.jobs || []).filter(j => j.serviceDate === today && !j.deletedAt && !j.archivedAt);
+  for (const job of todayJobs) {
+    if (!job.services) continue;
+    job.services = job.services.map(s => ({ ...s, crewSize: newCrew }));
+    // Persist service crew sizes to Postgres
+    const idx = { val: 0 };
+    for (const s of job.services) {
+      await query(
+        `UPDATE job_services SET crew_size=$1 WHERE job_id=$2 AND service_index=$3`,
+        [newCrew, String(job.id), idx.val++]
+      );
+    }
+  }
+  // Persist daily setup crew size
+  await query(
+    `UPDATE daily_setup SET crew_size=$1 WHERE setup_date=$2`,
+    [newCrew, today]
+  );
+}
+
 app.post("/time-clock/clock-in", async (req, res) => {
   try {
     const db = readDb();
@@ -3719,9 +3747,10 @@ app.post("/time-clock/clock-in", async (req, res) => {
     await recordRouteEvent(db, { action: "clock_in", employeeId: employee.id, employeeName: employee.name, date: row.date, geo: req.body.geo });
     // Write directly to Postgres first, then update memory
     await upsertClockEntry(row);
+    await syncCrewSizeFromClockIns(db);
     memoryDb = db;
-    broadcastUpdate("employee_clocked_in", {});
-    res.json(row);
+    broadcastUpdate("employee_clocked_in", { crewSize: db.dailySetup.crewSize });
+    res.json({ ...row, crewSize: db.dailySetup.crewSize });
   } catch (err) {
     console.error("Clock-in error:", err);
     res.status(500).json({ error: "Clock-in failed: " + err.message });
@@ -3742,9 +3771,10 @@ app.post("/time-clock/clock-out", async (req, res) => {
     row.minutes = Math.round((new Date(row.clockOut) - new Date(row.clockIn)) / 60000);
     // Write directly to Postgres first, then update memory
     await upsertClockEntry(row);
+    await syncCrewSizeFromClockIns(db);
     memoryDb = db;
-    broadcastUpdate("employee_clocked_out", {});
-    res.json(row);
+    broadcastUpdate("employee_clocked_out", { crewSize: db.dailySetup.crewSize });
+    res.json({ ...row, crewSize: db.dailySetup.crewSize });
   } catch (err) {
     console.error("Clock-out error:", err);
     res.status(500).json({ error: "Clock-out failed: " + err.message });
