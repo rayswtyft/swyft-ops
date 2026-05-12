@@ -4062,14 +4062,15 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
                 ${beforePhotos.map(p => {
                   const isVideo = p.url && (p.url.includes("drive.google.com") || /\.(mp4|mov|avi|webm|hevc)/i.test(p.url));
+                  const thumbSrc = p.driveFileId ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w400` : p.url;
+                  const fullSrc = p.driveFileId ? `https://drive.google.com/uc?export=view&id=${p.driveFileId}` : p.url;
                   const thumb = isVideo
                     ? `<div onclick="window.open('${p.url}','_blank')" style="width:140px;height:100px;background:#1a1a2e;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:2em;">▶️</div>`
-                    : `<img src="${p.url}" alt="before" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" style="cursor:pointer;" />`;
+                    : `<img src="${thumbSrc}" alt="before" onclick="openPhotoModal('${fullSrc}', ${JSON.stringify(p.caption || "")})" style="cursor:pointer;width:140px;height:100px;object-fit:cover;border-radius:8px;" onerror="this.onerror=null;this.src='${p.url}'" />`;
                   return `
                   <div class="photo-card">
                     ${thumb}
                     <div class="muted">${p.caption || ""}</div>
-                    ${p.url && p.url.includes("drive.google.com") ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:#7c83fd;">📁 View on Drive</a>` : ""}
                     ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto('${job.id}', '${p.id}')">Delete</button>` : ""}
                   </div>`;
                 }).join("")}
@@ -4092,14 +4093,15 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
                 ${afterPhotos.map(p => {
                   const isVideo = p.url && (p.url.includes("drive.google.com") || /\.(mp4|mov|avi|webm|hevc)/i.test(p.url));
+                  const thumbSrc = p.driveFileId ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w400` : p.url;
+                  const fullSrc = p.driveFileId ? `https://drive.google.com/uc?export=view&id=${p.driveFileId}` : p.url;
                   const thumb = isVideo
                     ? `<div onclick="window.open('${p.url}','_blank')" style="width:140px;height:100px;background:#1a1a2e;display:flex;align-items:center;justify-content:center;border-radius:8px;cursor:pointer;font-size:2em;">▶️</div>`
-                    : `<img src="${p.url}" alt="after" onclick="openPhotoModal('${p.url}', ${JSON.stringify(p.caption || "")})" style="cursor:pointer;" />`;
+                    : `<img src="${thumbSrc}" alt="after" onclick="openPhotoModal('${fullSrc}', ${JSON.stringify(p.caption || "")})" style="cursor:pointer;width:140px;height:100px;object-fit:cover;border-radius:8px;" onerror="this.onerror=null;this.src='${p.url}'" />`;
                   return `
                   <div class="photo-card">
                     ${thumb}
                     <div class="muted">${p.caption || ""}</div>
-                    ${p.url && p.url.includes("drive.google.com") ? `<a href="${p.url}" target="_blank" style="font-size:11px;color:#7c83fd;">📁 View on Drive</a>` : ""}
                     ${currentMode !== "van" ? `<button class="red" onclick="deletePhoto('${job.id}', '${p.id}')">Delete</button>` : ""}
                   </div>`;
                 }).join("")}
@@ -5626,7 +5628,9 @@ async function saveScheduleCrew() {
       const data = await res.json();
       if (data.error) return alert(data.error);
       await loadEmployeeClockRecords();
-      alert((employee?.name || data.name || "Employee") + " clocked out — " + (data.minutes || 0) + " mins");
+      const co_mins = data.minutes || 0;
+      const co_display = co_mins >= 60 ? Math.floor(co_mins/60) + " hr " + (co_mins % 60) + " min" : co_mins + " min";
+      alert((employee?.name || data.name || "Employee") + " clocked out — " + co_display);
     }
 
 
@@ -6044,7 +6048,7 @@ async function saveScheduleCrew() {
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <strong style="font-size:16px;">${emp.name}</strong>
               <span style="background:#1a1a2e;color:#fff;padding:4px 10px;border-radius:12px;font-size:13px;">
-                ${emp.totalHours} hrs (${emp.totalMinutes} min)
+                ${Math.floor(emp.totalMinutes / 60)} hr ${emp.totalMinutes % 60} min
               </span>
             </div>
             <div style="margin-top:10px;">
@@ -6055,7 +6059,7 @@ async function saveScheduleCrew() {
                     🟢 In: ${e.clockIn ? new Date(e.clockIn).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—"}
                     &nbsp;→&nbsp;
                     🔴 Out: ${e.clockOut ? new Date(e.clockOut).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "<em>Active</em>"}
-                    ${e.hours != null ? `<span style="margin-left:8px;color:#aaa;">(${e.hours} hrs)</span>` : ""}
+                    ${e.minutes != null ? `<span style="margin-left:8px;color:#aaa;">(${Math.floor(e.minutes / 60)} hr ${e.minutes % 60} min)</span>` : ""}
                   </div>
                   <div style="font-size:12px;margin-top:4px;">
                     Clock-in: ${fmtGeo(e.clockInLocation)}<br/>

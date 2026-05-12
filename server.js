@@ -568,7 +568,7 @@ db.inventory = inventoryRes.rows.map(i => {
     fromEstimateId: j.from_estimate_id ? numericIfPossible(j.from_estimate_id) : undefined,
     openStatus: j.open_status || "single_day",
     services: servicesRes.rows.filter(s => String(s.job_id) === String(j.id)).map(serviceRowToObject),
-    photos: photosRes.rows.filter(p => String(p.job_id) === String(j.id)).map(p => ({ id: p.id, url: p.url, tag: p.tag, caption: p.caption || "", createdAt: p.created_at || null })),
+    photos: photosRes.rows.filter(p => String(p.job_id) === String(j.id)).map(p => ({ id: p.id, url: p.url, tag: p.tag, caption: p.caption || "", createdAt: p.created_at || null, driveFileId: p.drive_file_id || null })),
     driveFolderId: j.drive_folder_id || null
   }));
 
