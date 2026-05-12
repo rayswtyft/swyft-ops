@@ -4061,7 +4061,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
               <div class="photo-grid">
 
                 ${beforePhotos.map(p => {
-                  const isVideo = p.url && (p.url.includes("drive.google.com") || /\.(mp4|mov|avi|webm|hevc)/i.test(p.url));
+                  const isVideo = p.url && /\.(mp4|mov|avi|webm|hevc)/i.test(p.url);
                   const thumbSrc = p.driveFileId ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w400` : p.url;
                   const fullSrc = p.driveFileId ? `https://drive.google.com/uc?export=view&id=${p.driveFileId}` : p.url;
                   const thumb = isVideo
@@ -4092,7 +4092,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
               <div class="photo-grid">
 
                 ${afterPhotos.map(p => {
-                  const isVideo = p.url && (p.url.includes("drive.google.com") || /\.(mp4|mov|avi|webm|hevc)/i.test(p.url));
+                  const isVideo = p.url && /\.(mp4|mov|avi|webm|hevc)/i.test(p.url);
                   const thumbSrc = p.driveFileId ? `https://drive.google.com/thumbnail?id=${p.driveFileId}&sz=w400` : p.url;
                   const fullSrc = p.driveFileId ? `https://drive.google.com/uc?export=view&id=${p.driveFileId}` : p.url;
                   const thumb = isVideo
