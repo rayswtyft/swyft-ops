@@ -1050,6 +1050,11 @@
 
 
 
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <input type="checkbox" id="saveAsStandby" onchange="toggleStandbyMode(this)" style="width:18px;height:18px;cursor:pointer;" />
+        <label for="saveAsStandby" style="cursor:pointer;font-weight:500;">📥 Save as Standby (no date)</label>
+      </div>
+
       <input id="serviceDate" type="date" />
 
       <textarea id="jobNotes" placeholder="Notes"></textarea>
@@ -3487,13 +3492,13 @@ ${s.category === "Junk" && currentMode === "van" ? `
     }
 
     function toggleStandbyMode() {
-      const isStandby = document.getElementById("standbyMode").checked;
+      const isStandby = document.getElementById("saveAsStandby").checked;
       const dateField = document.getElementById("serviceDate");
       dateField.disabled = isStandby;
       dateField.style.opacity = isStandby ? "0.4" : "1";
     }
     async function createJob(){
-      const isStandby = document.getElementById("standbyMode").checked;
+      const isStandby = document.getElementById("saveAsStandby").checked;
       if (!$("contractorSelect").value) return alert("Select a contractor");
       if (!isStandby && !$("serviceDate").value) return alert("Choose a service date");
 
@@ -3536,7 +3541,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
       $("deliveryPickup").value = "";
       $("deliveryDropoff").value = "";
       $("jobNotes").value = "";
-      const sbMode = document.getElementById("standbyMode");
+      const sbMode = document.getElementById("saveAsStandby");
       if (sbMode) { sbMode.checked = false; toggleStandbyMode(); }
       renderServices();
       closeJobModal();
