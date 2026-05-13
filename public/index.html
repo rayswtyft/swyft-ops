@@ -5734,18 +5734,7 @@ async function saveScheduleCrew() {
       const employee = crew.find(e => String(e.id) === String(employeeId));
       if (employee?.clockedIn) return alert((employee?.name || "Employee") + " is already clocked in");
 
-      // PIN verification
-      const pin = prompt("Enter your PIN to clock in:");
-      if (pin === null) return; // cancelled
-      const empData = db.employees?.find(e => String(e.id) === String(employeeId));
-      if (!empData || !empData.pin) {
-        alert("No PIN set for this employee. Ask your manager to set one.");
-        return;
-      }
-      if (String(pin) !== String(empData.pin)) {
-        alert("Incorrect PIN. Try again.");
-        return;
-      }
+      // PIN removed — tap to clock in
 
       const res = await fetch("/time-clock/clock-in", {
         method:"POST",
