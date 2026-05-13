@@ -928,6 +928,17 @@
 
     </div>
 
+    <!-- STANDBY QUEUE -->
+    <div style="margin-top:24px;padding:0 8px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 14px;background:#1a1a2e;border-radius:10px;border:1px solid #333;" onclick="toggleStandbyPanel()">
+        <span style="font-weight:600;font-size:1em;">🗂 Standby Queue <span id="standbyCount" style="color:#aaa;font-weight:400;font-size:0.9em;"></span></span>
+        <span id="standbyChevron" style="color:#aaa;font-size:1.1em;">▼</span>
+      </div>
+      <div id="standbyPanel" style="display:none;margin-top:8px;">
+        <div id="standbyList" style="display:flex;flex-direction:column;gap:8px;"></div>
+      </div>
+    </div>
+
   </div>
 
 
@@ -3394,13 +3405,102 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
 
 
+
+
+    let standbyPanelOpen = false;
+    let standbyJobs = [];
+
+    function toggleStandbyPanel() {
+      standbyPanelOpen = !standbyPanelOpen;
+      document.getElementById("standbyPanel").style.display = standbyPanelOpen ? "block" : "none";
+      document.getElementById("standbyChevron").textContent = standbyPanelOpen ? "▲" : "▼";
+      if (standbyPanelOpen) loadStandbyJobs();
+    }
+
+    async function loadStandbyJobs() {
+      try {
+        const res = await fetch("/jobs/standby");
+        standbyJobs = await res.json();
+        const countEl = document.getElementById("standbyCount");
+        if (countEl) countEl.textContent = standbyJobs.length ? `(${standbyJobs.length})` : "(empty)";
+        renderStandbyList();
+      } catch(e) { console.error("Failed to load standby jobs", e); }
+    }
+
+    function renderStandbyList() {
+      const el = document.getElementById("standbyList");
+      if (!el) return;
+      if (!standbyJobs.length) {
+        el.innerHTML = '<div class="muted" style="padding:12px;">No jobs on standby.</div>';
+        return;
+      }
+      el.innerHTML = standbyJobs.map(j => {
+        const svcSummary = (j.services || []).map(s => s.subtype || s.category).join(", ") || "No services";
+        const contractor = j.contractorName || "No contractor";
+        const address = j.serviceAddress || "No address";
+        return `<div style="background:#1a1a2e;border:1px solid #333;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:0.95em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${contractor}</div>
+            <div style="color:#aaa;font-size:0.85em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${address}</div>
+            <div style="color:#7ec8a4;font-size:0.8em;margin-top:2px;">${svcSummary}</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0;">
+            <button class="green" style="padding:6px 12px;font-size:0.82em;" onclick="scheduleStandbyJob('${j.id}')">Schedule</button>
+            <button class="danger" style="padding:6px 10px;font-size:0.82em;background:#c0392b;" onclick="deleteStandbyJob('${j.id}')">✕</button>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    async function scheduleStandbyJob(jobId) {
+      const date = currentDate();
+      const label = formatDateLabel(date);
+      if (!confirm(`Schedule this job for ${label}?`)) return;
+      try {
+        await fetch(`/jobs/${jobId}/reschedule`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newDate: date })
+        });
+        await loadStandbyJobs();
+        await refreshAll(true);
+        alert("Job added to today's schedule!");
+      } catch(e) {
+        alert("Could not schedule job");
+      }
+    }
+
+    async function deleteStandbyJob(jobId) {
+      if (!confirm("Remove this job from standby?")) return;
+      try {
+        await fetch(`/jobs/${jobId}`, { method: "DELETE" });
+        await loadStandbyJobs();
+      } catch(e) {
+        alert("Could not delete job");
+      }
+    }
+
+    function formatDateLabel(dateStr) {
+      if (!dateStr) return "today";
+      const d = new Date(dateStr + "T12:00:00");
+      return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    }
+
+    function toggleStandbyMode() {
+      const isStandby = document.getElementById("standbyMode").checked;
+      const dateField = document.getElementById("serviceDate");
+      dateField.disabled = isStandby;
+      dateField.style.opacity = isStandby ? "0.4" : "1";
+    }
     async function createJob(){
+      const isStandby = document.getElementById("standbyMode").checked;
       if (!$("contractorSelect").value) return alert("Select a contractor");
-      if (!$("serviceDate").value) return alert("Choose a service date");
+      if (!isStandby && !$("serviceDate").value) return alert("Choose a service date");
 
       let jobPayload = {
         contractorId: Number($("contractorSelect").value),
-        serviceDate: $("serviceDate").value,
+        serviceDate: isStandby ? null : $("serviceDate").value,
+        standby: isStandby,
         notes: $("jobNotes").value,
       };
 
@@ -3436,10 +3536,17 @@ ${s.category === "Junk" && currentMode === "van" ? `
       $("deliveryPickup").value = "";
       $("deliveryDropoff").value = "";
       $("jobNotes").value = "";
+      const sbMode = document.getElementById("standbyMode");
+      if (sbMode) { sbMode.checked = false; toggleStandbyMode(); }
       renderServices();
       closeJobModal();
       await refreshAll(true);
-      alert("Job created");
+      if (isStandby) {
+        alert("Job saved to standby queue");
+        loadStandbyJobs();
+      } else {
+        alert("Job created");
+      }
     }
 
 

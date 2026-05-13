@@ -2331,10 +2331,21 @@ app.get("/jobs/next", (req, res) => {
   res.json(next);
 });
 
+
+app.get("/jobs/standby", (req, res) => {
+  const db = readDbRO();
+  const jobs = db.jobs
+    .filter(j => !j.serviceDate && !j.deletedAt && !j.archivedAt)
+    .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+    .map(j => hydrateJob(j, db));
+  res.json(jobs);
+});
+
 app.post("/jobs", async (req, res) => {
   try {
     const db = readDb();
-    const serviceDate = cleanString(req.body.serviceDate) || db.dailySetup.date || todayString();
+    const isStandby = req.body.standby === true;
+    const serviceDate = isStandby ? null : (cleanString(req.body.serviceDate) || db.dailySetup.date || todayString());
     const job = {
       id: uuidv4(),
       contractorId: String(req.body.contractorId || ""),
@@ -2349,7 +2360,7 @@ app.post("/jobs", async (req, res) => {
         ? req.body.services.map(s => normalizeService(s, db.dailySetup.crewSize))
         : [],
       photos: [],
-      sortOrder: nextSortOrderForDate(db, serviceDate),
+      sortOrder: isStandby ? 0 : nextSortOrderForDate(db, serviceDate),
       deletedAt: null,
       archivedAt: null,
       finishedAt: null,
