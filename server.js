@@ -2572,6 +2572,34 @@ app.post("/jobs/:id/finish", async (req, res) => {
   }
 });
 
+
+app.post("/jobs/:id/standby", async (req, res) => {
+  try {
+    const db = readDb();
+    const job = db.jobs.find(j => String(j.id) === String(req.params.id));
+    if (!job) return res.status(404).json({ error: "Job not found" });
+    // Clear the date so the job becomes a standby
+    job.serviceDate = null;
+    job.finishedAt = null;
+    job.openStatus = "single_day";
+    // Reset service-level times
+    for (const s of job.services || []) {
+      s.onMyWayTime = null;
+      s.arrivedTime = null;
+      s.startTime = null;
+      s.endTime = null;
+      s.inventoryDeductedAt = null;
+    }
+    await upsertJob(query, job);
+    memoryDb = db;
+    broadcastUpdate("job_updated", { id: job.id });
+    res.json({ success: true, job: hydrateJob(job, db) });
+  } catch (err) {
+    console.error("Move to standby error:", err);
+    res.status(500).json({ error: "Could not move to standby: " + err.message });
+  }
+});
+
 app.post("/jobs/:id/reschedule", async (req, res) => {
   try {
     const db = readDb();

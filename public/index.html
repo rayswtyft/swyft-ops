@@ -3857,7 +3857,7 @@ ${s.category === "Junk" && currentMode === "van" ? `
 
           <div class="quick-actions" style="margin-top:10px;">
 
-            <button class="secondary" onclick="archiveJob('${job.id}')">Standby</button>
+            <button class="secondary" onclick="moveToStandby('${job.id}')">📥 Move to Standby</button>
 
             <button class="orange" onclick="openRescheduleModal('${job.id}')">📅 Reschedule</button>
 
@@ -5262,6 +5262,20 @@ async function saveScheduleCrew() {
 
       await refreshAll(true);
 
+    }
+
+    async function moveToStandby(id) {
+      if (!confirm("Move this job to the standby queue? It will be removed from the schedule.")) return;
+      try {
+        await fetch(`/jobs/${id}/standby`, { method: "POST" });
+        selectedJobId = null;
+        await refreshAll(true);
+        await loadStandbyJobs();
+        if (!standbyPanelOpen) toggleStandbyPanel();
+        showToast("Job moved to standby queue");
+      } catch(e) {
+        alert("Could not move job to standby");
+      }
     }
 
 
