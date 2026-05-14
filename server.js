@@ -933,7 +933,9 @@ function rateForService(service) {
 }
 
 function cleaningSuppliesAutoCharge(service) {
-  return service.category === "Cleaning" && service.subtype !== "Site cleanup" ? 45 : 0;
+  const eligible = ["Deep clean", "Post construction cleanup", "deep clean", "post construction cleanup"];
+  const subtype = (service.subtype || "").trim();
+  return eligible.some(e => subtype.toLowerCase() === e.toLowerCase()) ? 45 : 0;
 }
 
 function normalizeMaterials(raw = {}) {
