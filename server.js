@@ -1651,9 +1651,25 @@ async function qbCreateInvoiceForJob(db, job) {
     });
   }
 
-  // Invoice number: start at 2000, count sent invoices to determine next number
-  const sentJobs = db.jobs.filter(j => j.quickbooksStatus === "sent" && j.quickbooksInvoiceId);
-  const docNumber = String(2000 + sentJobs.length);
+  // Invoice number: query QB for highest existing invoice number and increment
+  let docNumber = "2000";
+  try {
+    const qbToken = db.settings.quickbooks.accessToken;
+    const realmId = db.settings.quickbooks.realmId;
+    const numRes = await axios.get(
+      `https://quickbooks.api.intuit.com/v3/company/${realmId}/query?query=SELECT%20DocNumber%20FROM%20Invoice%20ORDER%20BY%20DocNumber%20DESC%20MAXRESULTS%201&minorversion=65`,
+      { headers: { Authorization: `Bearer ${qbToken}`, Accept: "application/json" } }
+    );
+    const invoices = numRes.data?.QueryResponse?.Invoice || [];
+    if (invoices.length > 0) {
+      const lastNum = parseInt(invoices[0].DocNumber, 10);
+      if (!isNaN(lastNum)) docNumber = String(Math.max(lastNum + 1, 2000));
+    }
+  } catch (e) {
+    // fallback: count sent jobs
+    const sentJobs = db.jobs.filter(j => j.quickbooksStatus === "sent" && j.quickbooksInvoiceId);
+    docNumber = String(2000 + sentJobs.length);
+  }
 
   // Build CustomField array — DefinitionId "1" = Service Location (no Type field, QB rejects it)
   const customFields = [];
