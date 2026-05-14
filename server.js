@@ -1561,8 +1561,17 @@ async function qbCreateCustomer(db, contractor) {
 }
 
 async function qbCreateInvoiceForJob(db, job) {
-  const contractor = job.contractor;
-  if (!contractor) throw new Error(`Job ${job.id} has no contractor`);
+  let contractor = job.contractor;
+
+  // Fallback: if contractor not hydrated (e.g. migrated job with null contractorId),
+  // try to find by contractorName in the DB
+  if (!contractor && job.contractorName) {
+    contractor = db.contractors.find(c =>
+      c.name && c.name.trim().toLowerCase() === job.contractorName.trim().toLowerCase()
+    ) || null;
+  }
+
+  if (!contractor) throw new Error(`Job ${job.id} has no contractor (contractorId: ${job.contractorId}, contractorName: ${job.contractorName})`);
 
   const customer = await qbCreateCustomer(db, contractor);
   const lines = [];
